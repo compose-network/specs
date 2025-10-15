@@ -227,7 +227,7 @@ Action (1) can be prevented with message authentication and appending a justific
 Action (2) can't be prevented, but mitigated with shared publisher rotation.
 
 Immediate possible byzantine actions from the sequencer include:
-1. Tempering the user's request.
+1. Tampering the user's request.
 2. Sending a tempered CIRC message.
 3. Sending a `Vote` message with `vote=False` when the transaction is valid.
 4. Sending a `Vote` message with `vote=True` when the transaction is invalid.
