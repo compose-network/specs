@@ -23,7 +23,7 @@ The system consists of the following primary components/actors:
 
 The communication is assumed to be authenticated and asynchronous. It can be implemented via Protobuf-encoded messages over network endpoints provided by some external layer.
 
-The system tolerates crash fault from sequencers, though the shared publisher can't crash to guarantee termination.
+The system tolerates crash faults from sequencers, though the shared publisher can't crash to guarantee termination.
 This is explored more deeply in the [Fault Tolerance](#fault-tolerance) section.
 
 ## Properties

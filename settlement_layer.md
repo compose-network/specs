@@ -32,7 +32,7 @@ To encapsulate all the state transition information about each rollup, the SP wi
 The validity of rollup blocks is proven by building on top of the [Succinct](https://succinctlabs.github.io/op-succinct/introduction.html) framework.
 In such a framework, once a certain range of blocks is produced, a [STARK](https://eprint.iacr.org/2018/046.pdf) ZK proof is generated, validating the entire range.
 Once enough ranges are proven, a STARK-to-SNARK aggregation program produces a succinct SNARK proof attesting to the validity of the complete batch.
-The transformation to a SNARK proof is important as it can be efficiently verified on-chain with a simple bilinear-pairing
+The transformation to a SNARK proof is important as it can be efficiently verified on-chain with a simple bilinear-pairing.
 
 This mechanism will be adjusted so that sequencers can also prove their mailbox activity regarding other chains.
 Moreover, the SP will execute a final ZK program that verifies each L2 batch proof and the consistency in mailbox activity.
