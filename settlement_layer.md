@@ -126,7 +126,7 @@ function accepts an `AggregationOutputs` object (which has similar data to `Roll
 This is done by any default op-succinct rollup.
 
 On our side, a common unique settlement contract is used for the whole network, i.e. for all rollups.
-The contract also holds a `prove` function; but, instead, it accepts a [`SuperblockAggregationOutputs`](TODO) object along with its proof.
+The contract also holds a `prove` function; but, instead, it accepts a `SuperblockBatch` object along with its proof.
 The contract needs to perform the following checks:
 1. **Rollup Existence**: ensure that each rollup in the superblock is registered.
 2. **Base State Consistency**: ensure that the previously anchored superblock is indeed the last one submitted to L1.
@@ -134,18 +134,18 @@ The contract needs to perform the following checks:
 
 **Rollup Existence**
 
-For each `rst` in `SuperblockAggregationOutputs.rollupST`, the contract checks that a rollup with the respective `rst.rollupConfigHash` is registered.
+For each `rst` in `SuperblockBatch.rollupST`, the contract checks that a rollup with the respective `rst.rollupConfigHash` is registered.
 This consists of the superblock validation rule 3.
 
 **Base State Consistency**
 
 The contract needs to ensure that the base grounds on which the proof was generated are consistent with what was last submitted to L1.
-This is done by checking that the `SuperblockAggregationOutputs.parentSuperblockBatchHash` is the hash of the last submitted superblock.
+This is done by checking that the `SuperblockBatch.parentSuperblockBatchHash` is the hash of the last submitted superblock.
 
 **Transition Validity**
 
 To verify the proof, the contract calls the SP1 contract's verification function, providing it with:
-- The hash of the `SuperblockAggregationOutputs` object.
+- The hash of the `SuperblockBatch` object.
 - The proof
 - The verification key of the `Network Aggregation Program`.
 
@@ -362,7 +362,7 @@ flowchart LR
     end
 
     subgraph Outputs
-        B1["Hash(SuperblockAggregationOutputs) (public value)"]
+        B1["Hash(SuperblockBatch) (public value)"]
         B2["Proof"]
     end
 
