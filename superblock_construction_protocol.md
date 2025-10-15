@@ -640,7 +640,7 @@ The other path includes the cross-chain transaction, in case the decision turns 
 Once a `Decided` message is received, the appropriate fork path can be selected and the other one discarded.
 
 During the `Locked-Waiting` state, the sequencer can process a local transaction with the condition that such a transaction is independent from the cross-chain transactions.
-Here, to be independent means that the ordering of the transaction pair can't change the  output of each transaction.
+Here, to be independent means that the ordering of the transaction pair can't change the output of each transaction.
 This is can be ensured in the following way.
 Let:
 - $\{f^{xT}_i\}_{i = 1, \ldots , n}$ denote the set of all the functions being called by the cross-chain transaction request (remember that a single cross-chain bundle can have multiple transactions on the same chain).
