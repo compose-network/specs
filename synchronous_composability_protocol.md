@@ -29,7 +29,7 @@ This is explored more deeply in the [Fault Tolerance](#fault-tolerance) section.
 ## Properties
 
 The protocol keeps the properties of 2PC, ensuring the following safety properties:
-- **Validity**: (i) If any process votes 0, then 0 is the only possible decision value. (ii) If all process vote 1 and there are no failures, then 1 is the only possible decision value.
+- **Validity**: (i) If any process votes 0, then 0 is the only possible decision value. (ii) If all processes vote 1 and there are no failures, then 1 is the only possible decision value.
 - **Agreement**: If two correct processes decide $b$ and $b'$, then $b = b'$.
 
 And liveness property:
