@@ -57,7 +57,7 @@ Note that this defines a batch in terms of time, and not in a number of blocks.
 Thus, even if a rollup misses a block, it will still prove its batch for the correct time window.
 
 > [!TIP]
-> Why is such synchronization is necessary?<br>
+> Why is such synchronization necessary?<br>
 > Suppose two rollups have the same block time but different batching trigger logic.
 > For example, suppose rollup A creates block X and rollup B creates block Y, both in the same slot.
 > However, A proves the range [X-B, X] while B proves the range [Y+1-B, Y+1].
