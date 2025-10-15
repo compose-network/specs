@@ -365,7 +365,7 @@ State Variables:
 
 **Initialization**
 
-An L1 contract holds the Superblock genesis the genesis slot for the system to start.
+An L1 contract holds the Superblock genesis slot for the system to start.
 Until that slot, the SP initates its state and stays in the `StartingSlot` state.
 
 Once the genesis slot starts, the SP sends a `StartSlot` message to each sequencer with initial values `Slot=1`, `NextSuperblockNumber=1`, `LastSuperblockHash=GENESIS_HASH`, and `L2BlockRequest(ChainID=i,BlockNumber=1,ParentHash=CHAIN_GENESIS_HASH_i)` for chain `i`, where `GENESIS_HASH` is the hash of the genesis Superblock and `CHAIN_GENESIS_HASH_i` is the genesis hash of chain `i`.
