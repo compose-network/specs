@@ -587,9 +587,92 @@ In future versions, many will be supported.
 Due to the settlement dependency, a proper session management system will be required not to create settlement deadlocks, that could allow double-spending and other attacks.
 
 
-## Wrapped Sequencer
+## WS - ER Sync
 
-TODO
+For simulating transactions, the WS needs a snapshot of the ER's state, which influences the contents of any message written to other chains.
+Once the `safe_execute` tx is submitted to the ER, it will be re-executed with the ER's current state, and it will only succeed if the written messages are the same as the ones simulated (pre-populated in the StagedMailbox).
+Therefore, to maximize the probability of success, the WS should have the most recent state possible.
+
+For that, the WS will be constantly syncing the ER's state.
+However, note that the state can't be updated during the protocol's execution, as it could change the simulation results (previously written messages).
+Thus, the protocol initiation should also lock the chain's state being used.
+
+**Design pattern**<br>
+- The WS keeps **one active global snapshot** (read-only) + zero or one **staging snapshot**.
+- CDCP instances acquire a read lease on the active snapshot at start, and release it at end.
+- A background sync loop fetches the newest ER state continuously, but updates `active <- staging` only when there's no active readers (leases).
+
+This represents a reader/writer with versioned snapshots setup, which doesn't require the complexity of a RWLock as sessions never need to write, i.e. only the writer swaps when there are no active readers.
+
+```py
+# ===== ER State Snapshot =====
+record ERStateSnapshot {
+  uint64  height
+  bytes32 block_hash
+  State   state           # abstract state representation
+}
+
+# ===== Snapshot Store with Leasing =====
+record SnapshotStore {
+  ERStateSnapshot active              # globally visible snapshot
+  ERStateSnapshot? staging            # newest fetched, not yet active
+  bool   read_lease                   # true if any CDCP session is using active
+  bool   swap_pending                 # true if staging exists and waiting to swap
+  Mutex  mu
+  time   last_swap_time
+}
+
+function WS_BackgroundSyncLoop(store: SnapshotStore, erClient: ERClient, poll_interval_ms):
+  while true:
+    # Fetch latest ER view
+    latest = fetch_latest_er_snapshot(erClient)
+
+    lock(store.mu):
+      # If this is not fresher or same block, skip
+      if store.staging != null and
+            (latest.height < store.staging.height or
+            (latest.height == store.staging.height and latest.block_hash == store.staging.block_hash)
+            ):
+        unlock(store.mu)
+        sleep(poll_interval_ms)
+        continue
+
+      # Put into staging
+      store.staging = latest
+      store.swap_pending = true
+
+      # If there are no readers, swap immediately
+      if store.read_lease == false:
+        store.active = store.staging
+        store.staging = null
+        store.swap_pending = false
+        store.last_swap_time = now()
+
+      unlock(store.mu)
+
+    sleep(poll_interval_ms)
+
+# Acquire a read-only snapshot lease for a new CDCP session.
+# Returns a frozen pointer/copy to ERStateSnapshot the session must use throughout.
+function acquire_snapshot_lease(store: SnapshotStore) -> ERStateSnapshot?:
+  lock(store.mu):
+    store.read_lease = true
+    snapshot = store.active
+  unlock(store.mu)
+  return snapshot
+
+# Release the lease when the session finishes.
+function release_snapshot_lease(store: SnapshotStore):
+  lock(store.mu):
+    store.read_lease = false
+    if store.read_lease == false and store.swap_pending:
+      # Safe swap now
+      store.active = store.staging
+      store.staging = null
+      store.swap_pending = false
+      store.last_swap_time = now()
+  unlock(store.mu)
+```
 
 ## Settlement
 
