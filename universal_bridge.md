@@ -1,6 +1,7 @@
 
 # Universal Shared Bridge for OP Chains  
-*(Validity-Proof / OP-Succinct Compatible; Direct L2↔L2 “mint-on-message” fast path)*
+
+The Universal Shared Bridge for OP Chains enables seamless asset transfers between Ethereum (L1) and any supporting OP L2, as well as directly between OP L2s. It leverages canonical custody on any chain, minting of "ComposeableERC20" (CET) tokens to represent bridged assets on L2s, and supports secure burn/mint logic for moving assets between L2s. All mint/burn operations are exclusively handled by the bridge contracts, ensuring safety. The bridge employs OP-Succinct proof mechanisms for L1 verifications and introduces efficient message-based transfers for L2↔L2 bridging, with formal post-transfer settlement. 
 
 ##  Objectives & Authoritative Requirements
 
@@ -81,7 +82,7 @@ ___
     -   `read(chainId, account, sessionId, label) → bytes`
         (consumes/marks delivered)
 
--   **Token types**
+-   **Supported Token types**
 
     -   **Native ERC-20** on an L2 (not minted by bridge).
     -   **CET** (ComposeableERC20Token) --- canonical L2 representation
@@ -98,35 +99,91 @@ ___
     -   On the destination chain, the bridge deterministically computes
         the CET address and mints to the receiver.
 
+    **TODO** More details?
+
 ------------------------------------------------------------------------
 
-###  Message Schema (Mailbox payload)
+###  Mailbox
+
+Mailbox is a container of `Messages` divided into 2 boxes: 
+- `Inbox` that has messages consumed by `Read()` function
+- `Outbox` that has messages pushed into by `Write()` function.
+
+
+``` solidity
+  struct Message {
+    MessageHeader header,
+    bytes payload
+  }
+
+// Header for message. Its hash can serve as the message Identifier.
+    struct MessageHeader {
+        uint256 sessionId; // 16 bytes of version + 240 bytes of value chosen by the user
+        uint256 chainSrc;  // chain ID where the message was sourced from
+        uint256 chainDest; // chain ID of target destination
+        address sender;    // The address on `chainSrc` initiating the message 
+        address receiver;  // The address on `chainDest` receiving the message
+        string label;      // Helps decipher the payload.
+    }    
+
+interface IMailbox {
+    // `sender` writes to the OUTBOX a message to be relayed to `reciever` on `chainDest`
+    function write(
+        Message calldata message
+    ) external;
+
+    // `receiver` reads from the INBOX a message relayed by `sender` from `srcChain`
+    function read(
+        MessageHeader calldata header
+    ) external returns (bytes memory);
+}
+```
+
+
+
+#### SessionID
+
+SessionID is a 240 bits random value that MUST NOT be reused across MessageHeaders with otherwise similar values.
+However, every message in a cross-chain exchange mapping to a single atomic operation must carry the same SessionID.
+
+The first 16 bytes serve as version. Currently the only canonical version is 0.
+
+#### Replay Protection
+
+The `Read` function will return an error if it will be invoked more than once with the same `MessageHeader`
+
+
+------------------------------------------------------------------------
+
+
+###  Payload Schema
+
+The bridge supports 2 payload types that have the following labels on the *Mailbox*:
+
+- `SEND`
+- `ACK`
+
+#### SEND Payload
 
 All `SEND` payloads use a single canonical ABI encoding:
 
     abi.encode(
-      address sender,        // original EOA or contract on source L2
-      address receiver,      // recipient on destination L2
-      address remoteAsset,       // canonical L1 asset address
-      uint256 amount         // amount (decimals same as its CET)
+      uint256 remoteChainID  // The native chain of the transferred asset
+      address remoteAsset,   // canonical asset address
+      uint256 amount         // amount
     )
 
-Notes: - On **destination L2**, the bridge computes the **CET address
-deterministically** from `remoteAsset`
-- This ensures the CET address is consistent across all L2s, without a
-registry.
 
-ACK payload:
+#### ACK payload:
 
     abi.encode("OK")
-
-Labels: - Outbound: `"SEND"` - Return ACK: `"ACK SEND"`
 
 ------------------------------------------------------------------------
 
 
-### Source L2: bridge entrypoints (sessionized)
+### Source L2: bridge entrypoints
 
+It is important to note that 
 
 ``` solidity
 /// Lock native ERC-20 on source and send SEND message
@@ -140,10 +197,11 @@ function bridgeERC20To(
 
 /// Burn CET on source and send SEND message
 function bridgeCETTo(
-    uint256 chainDest,      // Destination ChainID
-    address cetTokenSrc,    // CET on source L2
+    uint256 chainDest,         // Destination ChainID
+    address cetTokenSrc,       // CET on source L2
+    address remoteAssetAddress // original 
     uint256 amount,
-    address receiver,       // address on destination L2
+    address receiver,          // address on destination L2
     uint256 sessionId
 ) external;
 ```
@@ -214,9 +272,7 @@ function bridgeERC20To(
     IERC20(tokenSrc).transferFrom(sender, address(this), amount);
     emit TokensLocked(tokenSrc, sender, amount);
 
-    address remoteAsset = ERC20Metadata(tokenSrc).remoteSource(); // canonical L1 address
-
-    bytes memory payload = abi.encode(sender, receiver, remoteAsset, amount);
+    bytes memory payload = abi.encode(sender, receiver, tokenSrc, amount);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND", payload);
     // performs a mailbox read for an "ACK" labeled message.
@@ -225,7 +281,7 @@ function bridgeERC20To(
     emit MailboxWrite(chainDest, receiver, sessionId, "SEND");
 
     bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND"));
-    emit TokensSendQueued(chainDest, sender, receiver, remoteAsset, amount, sessionId, messageId);
+    emit TokensSendQueued(chainDest, sender, receiver, tokenSrc, amount, sessionId, messageId);
 }
 ```
 
@@ -315,28 +371,6 @@ function receiveTokens(
 -   **No registry needed:** CET address is computed deterministically
     from L1 asset address.
 -   **ACK:** Ensures mailbox equivalency.
-
-------------------------------------------------------------------------
-###  Mailbox Interface
-
-``` solidity
-interface IMailbox {
-    function write(
-        uint256 chainId,
-        address account,
-        uint256 sessionId,
-        string calldata label,
-        bytes calldata payload
-    ) external;
-
-    function read(
-        uint256 chainId,
-        address account,
-        uint256 sessionId,
-        string calldata label
-    ) external returns (bytes memory);
-}
-```
 
 ------------------------------------------------------------------------
 
