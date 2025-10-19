@@ -302,7 +302,7 @@ function bridgeCETTo(
 
     address remoteAsset = ICET(cetTokenSrc).remoteSource(); // extract canonical L1 address
 
-    bytes memory payload = abi.encode(sender, receiver, remoteAsset, amount);
+    bytes memory payload = abi.encode(remoteAsset, amount);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND", payload);
     checkAck(chainDest, sessionID)
