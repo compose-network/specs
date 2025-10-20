@@ -16,7 +16,7 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 9. **Exit Logic (proof-based paths):** Use the **same exit logic as OP-Succinct**: prove claims against a chain’s **post root**, then an **MPT/storage proof** to the chain’s **Outbox/Exit root**, then a **Merkle inclusion** for the exit record.  
 10. **Replay Protection:** Messages can be consumed only once. Any replay will be ignored.  
 11. **Inter-L2 Fast Path:** For **L2↔L2** transfers, the destination **mints on receipt of a bridge message** (no proof verification at claim time). **Later settlement** is done simultaneously via aggregated proofs (out of scope here).
-12. **TBD** Allow token owner to have the bridge mint native token on specified conditions.
+12. **TODO:** Allow token owner to have the bridge mint native token on specified conditions.
 
 ---
 
@@ -52,7 +52,7 @@ abstract contract ComposeableERC20 is ERC20, IERC7802 {
         /// @notice The ChainID where this token was originally minted.
         uint256 remoteChainID
         /// @notice Address of the corresponding version of this token on the remote chain.
-        address remoteToken;
+        address remoteAsset;
         /// @notice Name of the token
         string name;
         /// @notice Symbol of the token
@@ -260,6 +260,7 @@ event MailboxAckWrite(uint256 indexed chainId, address indexed account, uint256 
 ###  `bridgeERC20To`
 
 ``` solidity
+// bridges all non CET ERC-20 tokens
 function bridgeERC20To(
     uint256 chainDest,
     address tokenSrc,
@@ -272,7 +273,7 @@ function bridgeERC20To(
     IERC20(tokenSrc).transferFrom(sender, address(this), amount);
     emit TokensLocked(tokenSrc, sender, amount);
 
-    bytes memory payload = abi.encode(sender, receiver, tokenSrc, amount);
+    bytes memory payload = abi.encode(block.chainid, tokenSrc, amount);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND", payload);
     // performs a mailbox read for an "ACK" labeled message.
@@ -300,9 +301,11 @@ function bridgeCETTo(
     ICET(cetTokenSrc).crossChainburn(sender, amount);
     emit CETBurned(cetTokenSrc, sender, amount);
 
-    address remoteAsset = ICET(cetTokenSrc).remoteSource(); // extract canonical L1 address
+    address remoteAsset = ICET(cetTokenSrc).remoteAsset(); 
+    uint256 remoteChainID = ICET(cetTokenSrc).remoteChainID();
 
-    bytes memory payload = abi.encode(remoteAsset, amount);
+
+    bytes memory payload = abi.encode(remoteChainID, remoteAsset, amount);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND", payload);
     checkAck(chainDest, sessionID)
@@ -310,7 +313,7 @@ function bridgeCETTo(
     emit MailboxWrite(chainDest, receiver, sessionId, "SEND");
 
     bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND"));
-    emit TokensSendQueued(chainDest, sender, receiver, remoteAsset, amount, sessionId, messageId);
+    emit TokensSendQueued(chainDest, sender, receiver, cetTokenSrc, amount, sessionId, messageId);
 }
 ```
 
@@ -319,32 +322,28 @@ function bridgeCETTo(
 ###  Destination L2 --- Claim Flow
 ``` solidity
 function receiveTokens(
-    uint256 chainSrc,
-    uint256 chainDest,
-    address sender,
-    address receiver,
-    uint256 sessionId
+    MessageHeader msgHeader
 ) external returns (address token, uint256 amount) {
-    require(msg.sender == receiver, "Only receiver can claim");
-    require(chainDest == block.chainid, "Wrong destination chain");
+    require(msg.sender == msgHeader.receiver, "Only receiver can claim");
+    require(msgHeader.chainDest == block.chainid, "Wrong destination chain");
+    require(msgHeader.label == "SEND", "Must read a SEND message")
 
     // 1) Read and consume the SEND message
-    bytes memory m = mailbox.read(chainSrc, receiver, sessionId, "SEND");
+    bytes memory m = mailbox.read(MessageHeader(sessionIDchainSrc, receiver, sessionId, "SEND");
     if (m.length == 0) revert("No SEND message");
 
     address readSender;
     address readReceiver;
     address remoteAsset;
 
-    (readSender, readReceiver, remoteAsset, amount) =
-        abi.decode(m, (address, address, address, uint256));
+    (remoteChainID, remoteAsset, amount) =
+        abi.decode(m, (uint256, address, uint256));
 
     require(readSender == sender, "Sender mismatch");
     require(readReceiver == receiver, "Receiver mismatch");
 
     // 2) RELEASE if native token is hosted & escrowed here, else MINT BCT
-    address native = nativeTokenOnThisChain(remoteAsset);
-    if (native != address(0) && IERC20(native).balanceOf(address(this)) >= amount) {
+    if remoteChainID == block.chainid && IERC20(remoteAddress).balanceOf(address(this)) >= amount) {
         // Release escrowed native tokens
         require(IERC20(native).transfer(receiver, amount), "Native release failed");
         token = native;
