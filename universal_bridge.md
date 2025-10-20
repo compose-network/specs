@@ -20,7 +20,7 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 
 ---
 
-##  Introducing the ComposeableERC20
+##  ComposeableERC20
 
 Inspired by `OptimismSuperChainERC20`, this is an ERC7802 compliant token for cross-chain transfers.
 The code snippet below describe the main functionality.
@@ -62,12 +62,21 @@ abstract contract ComposeableERC20 is ERC20, IERC7802 {
     }
 ```
 
+### Minting CET on the fly
+
+The universal 
+
+
+
 ___
 
 # L2↔L2 Bridge --- Sessioned Mailbox Flow
 
 
 ### Entities & Contracts
+
+-  **ComposableERC20**
+    An ERC20 wrapper native to the bridge.
 
 -   **Bridge (per L2)**
     Handles: locking native ERC-20, burning CET, mailbox write/read, and
@@ -102,6 +111,93 @@ ___
     **TODO** More details?
 
 ------------------------------------------------------------------------
+
+##  ComposeableERC20
+
+Inspired by `OptimismSuperChainERC20`, this is an ERC7802 compliant token for cross-chain transfers.
+The code snippet below describe the main functionality.
+
+```solidity
+abstract contract ComposeableERC20 is ERC20, IERC7802 {
+    /// @param _to     Address to mint tokens to.
+    /// @param _amount Amount of tokens to mint.
+    function crosschainMint(address _to, uint256 _amount) external {
+        if (msg.sender != COMPOSE_TOKEN_BRIDGE) revert Unauthorized();
+
+        _mint(_to, _amount);
+
+        emit CrosschainMint(_to, _amount, msg.sender);
+    }
+
+    /// @param _from   Address to burn tokens from.
+    /// @param _amount Amount of tokens to burn.
+    function crosschainBurn(address _from, uint256 _amount) external {
+        if (msg.sender != COMPOSE_TOKEN_BRIDGE) revert Unauthorized();
+
+        _burn(_from, _amount);
+
+        emit CrosschainBurn(_from, _amount, msg.sender);
+    }
+    
+       /// @notice Storage struct for the BridgedComposeTokenERC20 metadata.
+    struct BridgedComposeTokenERC20Metadata {
+        /// @notice The ChainID where this token was originally minted.
+        uint256 remoteChainID
+        /// @notice Address of the corresponding version of this token on the remote chain.
+        address remoteAsset;
+        /// @notice Name of the token
+        string name;
+        /// @notice Symbol of the token
+        string symbol;
+        /// @notice Decimals of the token
+        uint8 decimals;
+    }
+```
+
+### Minting CET on the fly
+
+The bridge can mint CETs on demand via a factory
+
+```solidity
+interface ICETFactory {
+    function predictAddress(address l1Asset) external view returns (address predicted);
+    function deployIfAbsent(
+        address l1Asset,
+        uint8 decimals,
+        string calldata name,
+        string calldata symbol,
+        address bridge
+    ) external returns (address deployed);
+}
+
+ICETFactory public cetFactory;
+
+function computeCETAddress(address remoteAsset) internal view returns (address) {
+    return cetFactory.predictAddress(remoteAsset);
+}
+
+function ensureCETAndMint(
+    address remoteAsset,
+    string calldata name,
+    string calldata symbol,
+    uint8 decimals,
+    address to,
+    uint256 amount
+) internal returns (address cet) {
+    // 1) Predict deterministic address
+    address predicted = computeCETAddress(remoteAsset);
+
+    // 2) Deploy if missing (CREATE3-based factory)
+    cet = cetFactory.deployIfAbsent(remoteAsset, decimals, name, symbol, address(this));
+    require(cet == predicted, "CET address mismatch");
+
+    // 3) Mint via bridge-only path
+    IToken(cet).mint(to, amount);
+    return cet;
+}
+```
+
+-------------
 
 ###  Mailbox
 
@@ -323,6 +419,11 @@ function bridgeCETTo(
 ``` solidity
 function receiveTokens(
     MessageHeader msgHeader
+    // the following parameters are only needed if the proper CET token wasn't deployed
+    // TODO: should they be part of the message?
+    string calldata name,
+    string calldata symbol,
+    uint8 decimals
 ) external returns (address token, uint256 amount) {
     require(msg.sender == msgHeader.receiver, "Only receiver can claim");
     require(msgHeader.chainDest == block.chainid, "Wrong destination chain");
@@ -332,15 +433,12 @@ function receiveTokens(
     bytes memory m = mailbox.read(MessageHeader(sessionIDchainSrc, receiver, sessionId, "SEND");
     if (m.length == 0) revert("No SEND message");
 
-    address readSender;
-    address readReceiver;
+    uint256 rmoteChainID;
     address remoteAsset;
 
     (remoteChainID, remoteAsset, amount) =
         abi.decode(m, (uint256, address, uint256));
 
-    require(readSender == sender, "Sender mismatch");
-    require(readReceiver == receiver, "Receiver mismatch");
 
     // 2) RELEASE if native token is hosted & escrowed here, else MINT BCT
     if remoteChainID == block.chainid && IERC20(remoteAddress).balanceOf(address(this)) >= amount) {
@@ -348,9 +446,8 @@ function receiveTokens(
         require(IERC20(native).transfer(receiver, amount), "Native release failed");
         token = native;
     } else {
-        // Mint deterministic BCT on this chain
-        token = computeBCTAddress(remoteAsset);
-        ICET(token).crossChainMint(receiver, amount);
+        // Mint deterministic CET on this chain
+        token = ensureCETAndMint(remoteAddress, name, symbol, decimals, msgHeader.receiver, amount)
     }
 
     // 3) ACK back to source
