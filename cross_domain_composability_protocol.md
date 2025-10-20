@@ -3,6 +3,20 @@
 This protocol enables atomic composability between rollups of the Compose network and rollups outside of it.
 The atomicity property refers to the guarantee that either both rollups successfully include transactions from a user's intent, or neither does.
 
+## Table of Contents
+
+- [Native vs. External Rollups](#native-vs-external-rollups)
+- [System Model](#system-model)
+- [Mailbox](#mailbox)
+- [Protocol](#protocol)
+  - [Messages](#messages)
+  - [Pseudo-code](#pseudo-code)
+  - [Transitive Dependency & Sessions](#transitive-dependency--sessions)
+- [WS - ER Sync](#ws---er-sync)
+- [Settlement](#settlement)
+  - [WS ZK Program](#ws-zk-program)
+  - [SP Program Modifications](#sp-program-modifications)
+
 ## Native vs. External Rollups
 
 To differentiate between types of rollups, we use the following terminology:
@@ -676,4 +690,115 @@ function release_snapshot_lease(store: SnapshotStore):
 
 ## Settlement
 
-TODO
+Following the SBCP (v2), at the end of the superblock period, sequencers submit an `AggregationProof` to the SP,
+commiting to their final state and to the associated mailbox roots.
+With an external rollup, the mailbox roots from natives should also be compared to the roots stores in the ER.
+
+Therefore, the WS should provide the SP with the ER's staged mailbox roots at settlement time.
+While the WS's proof does not need to attest to the ER's correct state execution, it should
+at least prove that there's a certain mailbox state associated with a certain ER block hash and number.
+
+### WS ZK Program
+
+For that, the WS zk program input is structured as:
+```rust
+pub struct WSInput {
+  WitnessData, // With similar data as in the ZK Range program input
+  pub post_state_root: B256,
+  
+  // Inbox
+  pub mailbox_inbox_chains_len: GetProofOutput
+  pub mailbox_inbox_chains:     GetProofOutput, // List of chains in inbox
+  pub mailbox_inbox_roots:      GetProofOutput, // List of inbox root per chain
+  
+  // Outbox
+  pub mailbox_outbox_chains_len:    GetProofOutput
+  pub mailbox_outbox_chains:        GetProofOutput, // List of chains in outbox
+  pub mailbox_outbox_roots:         GetProofOutput, // List of outbox root per chain
+}
+
+pub struct GetProofOutput {
+  pub address: B256,
+  pub accountProof: Vec<B256>, // Merkle proof
+  pub storageHash: B256,
+  pub storageProof: Vec<StorageProof>
+}
+
+pub struct StorageProof {
+  pub key: B256,
+  pub value: B256,
+  pub proof: Vec<B256>, // Merkle proof
+}
+```
+
+It consists of a `post_state_root` block reference and several [`eth_getProof`](https://www.quicknode.com/docs/ethereum/eth_getProof)
+outputs for fetching the mailbox state described in the `StagedMailbox` contract.
+
+More precisely:
+- The `post_state_root` field represents the last ER's block state root associated to the superblock period.
+- The `mailbox_inbox_chains_len` represents the output of calling `eth_getProof` for the slot `0x0`, which stores the length of the `chainIDsInbox` array (`len_inbox`).
+- Similarly, `mailbox_outbox_chains_len` represents the call at slot `0x1` for the length of the `chainIDsOutbox` array (`len_outbox`).
+- Given these lengths, the WS can fill `mailbox_inbox_chains` which represents a call for `len_inbox` items with keys `key(i) = base + i`, where `base = keccak256(0x0)`.
+- The same goes for `mailbox_outbox_chains`, with `base = keccak256(0x1)`.
+- The `StorageProof.value`, for the above calls items, represent the chain IDs that have messages in the inbox and outbox, respectively.
+- Finally, `mailbox_inbox_roots` and `mailbox_outbox_roots` represent calls for getting the data in `inboxRootPerChain` and `outboxRootPerChain`, respectively.
+- Each is called for `len_inbox` and `len_outbox` items, respectively, with keys `key(chainID) = keccak256(chainID || base)` for `base` as `0x02` and `0x03`, respectively.
+
+The program will produce the following output, committing to the mailbox state root, as defined in the [settlement layer spec](./settlement_layer.md).
+```rust
+pub struct WSOutput {
+  pub post_state_root:  B256,
+  pub mailbox_contract: B256,
+  pub mailbox_root:     B256,
+}
+```
+
+Once a proof is generated, the WS submits it to the SP along with the list of chain-specific inbox and outbox roots, as other native sequencers do.
+
+**WS ZK Program Pseudocode**
+```py
+procedure WS_ZK_Program(input: WSInput) -> WSOutput:
+    // Confirm post_state_root exists in the ER contract
+    ensure_l2_block_exists(input.witness_data, input.post_state_root)
+    
+    // Verify that mailbox is consistent and get it
+    mailbox_addr = verify_consistency_and_return_mailbox_address(input)
+    
+    // Verify proofs
+    verify_get_proof(input.mailbox_inbox_chains_len, input.post_state_root)
+    verify_get_proof(input.mailbox_inbox_chains, input.post_state_root)
+    verify_get_proof(input.mailbox_inbox_roots, input.post_state_root)
+    verify_get_proof(input.mailbox_outbox_chains_len, input.post_state_root)
+    verify_get_proof(input.mailbox_outbox_chains, input.post_state_root)
+    verify_get_proof(input.mailbox_outbox_roots, input.post_state_root)
+    
+    // Reconstruct mailbox root
+    inbox_len = input.mailbox_inbox_chains_len.storageProof[0].value
+    outbox_len = input.mailbox_outbox_chains_len.storageProof[0].value
+    inbox_chains = [sp.value for sp in input.mailbox_inbox_chains.storageProof]
+    outbox_chains = [sp.value for sp in input.mailbox_outbox_chains.storageProof]
+    ensure inbox_len = len(inbox_chains)
+    ensure outbox_len = len(outbox_chains)
+    
+    inbox_roots = [sp.value for sp in input.mailbox_inbox_roots.storageProof]
+    outbox_roots = [sp.value for sp in input.mailbox_outbox_roots.storageProof]
+    ensure inbox_len = len(inbox_roots)
+    ensure outbox_len = len(outbox_roots)
+    
+    mailbox_root = compute_mailbox_root(inbox_chains, inbox_roots, outbox_chains, outbox_roots)
+    
+    commit(WSOutput{
+    post_state_root: input.post_state_root,
+    mailbox_contract: mailbox_addr,
+    mailbox_root: mailbox_root
+    })
+```
+
+
+### SP Program Modifications
+
+The SP zk program should be adjusted to accept the WSOutput as an additional input.
+The SP then needs to:
+- Verify the proof for `WSOutput`.
+- Verify that `WSOutput.mailbox_contract` matches the expected StagedMailbox address for the WS.
+- As done for other rollups, verify that the `WSOutput.mailbox_root` is correct considering list of mailbox roots, and match these roots against native ones. 
