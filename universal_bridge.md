@@ -385,21 +385,17 @@ function receiveTokens(
 
 ------------------------------------------------------------------------
 
+## L1 <-> L2 Bridge For native rollups.
+
+Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy a `ComposePortal` (similar to `OptimismPortal)  that will use a shared `ETHLockBox` and an `ERC20LockBox`. The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
 
 
-## Modify L1 contracts to make Shared Deposits work
+## TODO: Can we do L1<->L2 bridge for external rollups
 
+### ETH
+Not w.o having liquidity available on the external rollup.
 
-
-
-
-### OpPortal2.sol
-
-1. Needs to work with CET standard
-2. Need to have a `LockBox` that supports ERC20s. Must always use the lockbox.
-
-
-**Note regarding interop sequencers** 
+### ERC-20
 
 Currently Op-Succinct Sequencers pick up `TransactionDeposited` Events to relay bridge messages.
 They check the address of the contract that originated the event. And perform a ZK proof that the event was included in the `recieptsRoot`
