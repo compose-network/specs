@@ -108,6 +108,7 @@ SBCP v2 uses two distinct notions that must not be conflated:
 Invariants
 - `last_finalized_superblock` increases by 1 per finalized submission and never exceeds the largest sealed period.
 - Rollback, when required, targets `last_finalized_superblock` (and its hash) and invalidates any sealed-but-unfinalized later periods.
+- The SP enforces a bounded proving window `PROOF_WINDOW`. If the proof for `last_finalized_superblock + 1` is not accepted within this window from the period boundary, a rollback to `last_finalized_superblock` is triggered.
 
 Different modes
 - On a fully happy path scenario, every period finalizes, and so `last_finalized_superblock` always equals the current `period_id` minus 1.
@@ -166,12 +167,14 @@ active: Set<Instance>                        # SCP/CDCP instances started in the
 sequence_number: uint64                      # per-period sequence counter (monotone)
 sched_index: Map<ChainID, sequence_number>   # last seq seen per chain (sequentiality constraint)
 cutover_time: timestamp                      # internal cutover time for the current period 
+settlement_deadline_time: timestamp          # time by which proof must be accepted (boundary + PROOF_WINDOW)
 
 # CDCP spanning and blocking
 blocked: <InstanceID, Set<ChainID>>          # Instance waiting for WSDecided and blocked chains
 
 # Config
-CUTOVER_DURATION = 10 seconds  # time before period ends, to stop scheduling new instances
+CUTOVER_DURATION = 10 seconds                # time before period ends, to stop scheduling new instances
+PROOF_WINDOW = (2/3) · PERIOD_DURATION    # allowed proving time since boundary (default: two-thirds of period)
 ```
 
 Transitions and triggers
@@ -179,14 +182,18 @@ Transitions and triggers
     - An SCP instance is forcefully closed by sending `Decided(0)`.
     - An CDCP instance can only be forcefully closed if `NativeDecided` wasn't yet sent. If so, it can be closed by sending `Decided(0)` and `NativeDecided(0)`; otherwise, it must wait for the WS decision.
     - Still, the new period starts with the associated rollups being blocked (`blocked`) from participating in new instances until the CDCP instance terminates.
+  Also set a proving deadline aligned to `PROOF_WINDOW` for the superblock `S = last_finalized_superblock_number + 1` (from the previous period):
+    - `settlement_deadline_time = time_now() + PROOF_WINDOW` (default: two-thirds of the period after the boundary).
 - While before cutover: When `queue != empty`, try to schedule the head request (see Scheduling). If admissible, emit `StartSC`/`StartCDCP(period_id, seq=sequence_number++)` and record in `active`.
 - Once an instance finishes, remove it from the active set.
 - At cutover (internal): Stop starting new instances for this period.
 - Settlement success event (async): On L1 acceptance of a proof for a new higher superblock number `X`, set `last_finalized_superblock_number = X` and store its hash.
-- Settlement failure event (async): Emit `RollBackTo(last_finalized_superblock_number, last_finalized_superblock_hash)`, which invalidate any sealed but unfinalized periods, and restarts the current period on top of the last proved state.
+- Settlement failure event (async): Emit `RollBackTo(last_finalized_superblock_number, last_finalized_superblock_hash)`, which invalidates any sealed but unfinalized later periods, and restarts the current period on top of the last proved state.
+- Proof deadline: If `time_now() > settlement_deadline_time` and `last_finalized_superblock_number != current_target_superblock_number-1`, treat it as a settlement failure and trigger `RollBackTo(last_finalized_superblock_number, last_finalized_superblock_hash)`.
 
 The cutover time should be such that instances have enough time to terminate before the next period.
 For that, we set `CUTOVER_DURATION = 10 seconds`.
+`PROOF_WINDOW` defines a bounded proving window (by default, two-thirds of a period). Concretely, at the boundary to a period, the SP sets `settlement_deadline_time = time_now() + PROOF_WINDOW`. If not finalized by then, a rollback is executed.
 
 Pseudo-code (succinct)
 ```
@@ -197,6 +204,7 @@ on_boundary(new_period_id):
   sequence_number = 0
   sched_index.clear()
   cutover_time = time_now() + (PERIOD_DURATION - CUTOVER_DURATION)
+  settlement_deadline_time = time_now() + PROOF_WINDOW
   for inst in active:
     if inst.type == SCP:
       finalize(inst, 0)  # send Decided(0)
@@ -221,6 +229,11 @@ try_schedule():
     active.add(inst)
     if inst.type == CDCP: emit StartCDCP(inst)
     else: emit StartSC(inst)
+
+on_timer_tick(now_ts):
+  # Deadline-triggered rollback if proof not accepted in time
+  if now_ts > settlement_deadline_time and last_finalized_superblock_number != current_target_superblock_number - 1:
+    emit RollBackTo{last_finalized_superblock_number, last_finalized_superblock_hash}
 ```
 
 ### Sequencers
