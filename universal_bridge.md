@@ -18,55 +18,6 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 11. **Inter-L2 Fast Path:** For **L2↔L2** transfers, the destination **mints on receipt of a bridge message** (no proof verification at claim time). **Later settlement** is done simultaneously via aggregated proofs (out of scope here).
 12. **TODO:** Allow token owner to have the bridge mint native token on specified conditions.
 
----
-
-##  ComposeableERC20
-
-Inspired by `OptimismSuperChainERC20`, this is an ERC7802 compliant token for cross-chain transfers.
-The code snippet below describe the main functionality.
-
-```solidity
-abstract contract ComposeableERC20 is ERC20, IERC7802 {
-    /// @param _to     Address to mint tokens to.
-    /// @param _amount Amount of tokens to mint.
-    function crosschainMint(address _to, uint256 _amount) external {
-        if (msg.sender != COMPOSE_TOKEN_BRIDGE) revert Unauthorized();
-
-        _mint(_to, _amount);
-
-        emit CrosschainMint(_to, _amount, msg.sender);
-    }
-
-    /// @param _from   Address to burn tokens from.
-    /// @param _amount Amount of tokens to burn.
-    function crosschainBurn(address _from, uint256 _amount) external {
-        if (msg.sender != COMPOSE_TOKEN_BRIDGE) revert Unauthorized();
-
-        _burn(_from, _amount);
-
-        emit CrosschainBurn(_from, _amount, msg.sender);
-    }
-    
-       /// @notice Storage struct for the BridgedComposeTokenERC20 metadata.
-    struct BridgedComposeTokenERC20Metadata {
-        /// @notice The ChainID where this token was originally minted.
-        uint256 remoteChainID
-        /// @notice Address of the corresponding version of this token on the remote chain.
-        address remoteAsset;
-        /// @notice Name of the token
-        string name;
-        /// @notice Symbol of the token
-        string symbol;
-        /// @notice Decimals of the token
-        uint8 decimals;
-    }
-```
-
-### Minting CET on the fly
-
-The universal 
-
-
 
 ___
 
