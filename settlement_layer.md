@@ -37,31 +37,11 @@ The transformation to a SNARK proof is important as it can be efficiently verifi
 This mechanism will be adjusted so that sequencers can also prove their mailbox activity regarding other chains.
 Moreover, the SP will execute a final ZK program that verifies each L2 batch proof and the consistency in mailbox activity.
 
-## Batch Synchronization
+## State Synchronization
 
-| Config Field | Value |
-|--------|-------|
-| Block Time | 12 seconds |
-| Ethereum Epochs Batch Factor | 10<br>(batch is triggered whenever Mod(Curr Eth Epoch, 10) == 0) |
-
-The settlement mechanism proves activity for a batch of blocks.
-Therefore, sequencers must be synchronized on when a batch starts and ends.
-For that, rollups will maintain common block time and batching logic.
-
-Block time is set to 12 seconds according to the [SBCP](./superblock_construction_protocol.md) protocol.
-
-Batch is synchronized according to Ethereum epochs, i.e. Ethereum is used as a common clock.
-Each sequencer continuously listens to L1 epochs and sets a new batch to start whenever the current L1 epoch number is divisible by 10.
-Once a new batch starts, the proving pipeline (described next) starts for the previous batch.
-Note that this defines a batch in terms of time, and not in a number of blocks.
-Thus, even if a rollup misses a block, it will still prove its batch for the correct time window.
-
-> [!TIP]
-> Why is such synchronization necessary?<br>
-> Suppose two rollups have the same block time but different batching trigger logic.
-> For example, suppose rollup A creates block X and rollup B creates block Y, both in the same slot.
-> However, A proves the range [X-B, X] while B proves the range [Y+1-B, Y+1].
-> Once mailbox consistency is checked, the mailbox state of B will be slightly more advanced than A's, and thus the mailbox consistency check may fail.
+The settlement mechanism proves a batch of blocks.
+Therefore, sequencers must be synchronized on when a batch starts and ends, so that mailbox states match.
+This synchronization is obtained from the Superblock Construction Protocol (SBCP v2).
 
 ## Superblock
 
