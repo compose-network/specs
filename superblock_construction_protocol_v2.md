@@ -105,10 +105,18 @@ SBCP v2 uses two distinct notions that must not be conflated:
     - Monotonically increases only when the L1 contract accepts and finalizes the proof for the next `SuperblockBatch`.
     - May lag behind `period_id` due to proving latency or bad periods.
 
+- Sealed superblock counter: `last_sealed_superblock_number`
+    - Advances by 1 exactly at each period boundary, sealing the period that just ended.
+    - Reset to `last_finalized_superblock` on rollback (cancels sealed-but-unfinalized periods).
+    - Drives `current_target_superblock_number = last_sealed_superblock_number + 1` for the new active period.
+
 Invariants
 - `last_finalized_superblock` increases by 1 per finalized submission and never exceeds the largest sealed period.
 - Rollback, when required, targets `last_finalized_superblock` (and its hash) and invalidates any sealed-but-unfinalized later periods.
 - The SP enforces a bounded proving window `PROOF_WINDOW`. If the proof for `last_finalized_superblock + 1` is not accepted within this window from the period boundary, a rollback to `last_finalized_superblock` is triggered.
+- Relationship: `last_sealed_superblock_number = last_finalized_superblock + 1` in normal operation.
+  - Consequently, also under normal operation, `current_target_superblock_number = last_sealed_superblock_number + 1 = last_finalized_superblock + 2`.
+  - In rollbacks, `last_sealed_superblock_number = last_finalized_superblock`, and so `current_target_superblock_number = last_finalized_superblock + 1`.
 
 Different modes
 - On a fully happy path scenario, every period finalizes, and so `last_finalized_superblock` always equals the current `period_id` minus 1.
@@ -157,12 +165,15 @@ Sealing and settlement for the previous period run in parallel and do not block 
 last_finalized_superblock_number: uint64
 last_finalized_superblock_hash: bytes32
 
+# Sealed (awaiting proof or just sealed at boundary)
+last_sealed_superblock_number: uint64        # increments at each period boundary; init = last_finalized_superblock_number
+
 # Queue with pending requests
 queue: PriorityQueue<xTRequest>             # global across periods
 
 # Current period
 current_period_id: uint64                    # current period_id
-current_target_superblock_number: uint64     # current target superblock number
+current_target_superblock_number: uint64     # tags blocks for the next superblock after `last_sealed_superblock_number`
 active: Set<Instance>                        # SCP/CDCP instances started in the current period
 sequence_number: uint64                      # per-period sequence counter (monotone)
 sched_index: Map<ChainID, sequence_number>   # last seq seen per chain (sequentiality constraint)
@@ -182,13 +193,13 @@ Transitions and triggers
     - An SCP instance is forcefully closed by sending `Decided(0)`.
     - An CDCP instance can only be forcefully closed if `NativeDecided` wasn't yet sent. If so, it can be closed by sending `Decided(0)` and `NativeDecided(0)`; otherwise, it must wait for the WS decision.
     - Still, the new period starts with the associated rollups being blocked (`blocked`) from participating in new instances until the CDCP instance terminates.
-  Also set a proving deadline aligned to `PROOF_WINDOW` for the superblock `S = last_finalized_superblock_number + 1` (from the previous period):
+  Also set a proving deadline aligned to `PROOF_WINDOW` for the superblock `S = last_sealed_superblock_number` (the one just sealed for the previous period):
     - `settlement_deadline_time = time_now() + PROOF_WINDOW` (default: two-thirds of the period after the boundary).
 - While before cutover: When `queue != empty`, try to schedule the head request (see Scheduling). If admissible, emit `StartSC`/`StartCDCP(period_id, seq=sequence_number++)` and record in `active`.
 - Once an instance finishes, remove it from the active set.
 - At cutover (internal): Stop starting new instances for this period.
 - Settlement success event (async): On L1 acceptance of a proof for a new higher superblock number `X`, set `last_finalized_superblock_number = X` and store its hash.
-- Settlement failure event (async): Emit `RollBackTo(last_finalized_superblock_number, last_finalized_superblock_hash)`, which invalidates any sealed but unfinalized later periods, and restarts the current period on top of the last proved state.
+- Settlement failure event (async): Emit `RollBackTo(last_finalized_superblock_number, last_finalized_superblock_hash)`, which invalidates any sealed but unfinalized later periods, and restarts the current period on top of the last proved state. Set `last_sealed_superblock_number = last_finalized_superblock_number`.
 - Proof deadline: If `time_now() > settlement_deadline_time` and `last_finalized_superblock_number != current_target_superblock_number-1`, treat it as a settlement failure and trigger `RollBackTo(last_finalized_superblock_number, last_finalized_superblock_hash)`.
 
 The cutover time should be such that instances have enough time to terminate before the next period.
@@ -198,8 +209,14 @@ For that, we set `CUTOVER_DURATION = 10 seconds`.
 Pseudo-code (succinct)
 ```
 on_boundary(new_period_id):
+  # Seal the period that just ended: advance sealed counter once per boundary.
+  if last_sealed_superblock_number < last_finalized_superblock_number:
+    last_sealed_superblock_number = last_finalized_superblock_number
+  last_sealed_superblock_number += 1
+
   current_period_id = new_period_id
-  current_target_superblock_number = last_finalized_superblock_number + 1
+  # Tag blocks in the new period to target the next number after the sealed one
+  current_target_superblock_number = last_sealed_superblock_number + 1
   broadcast StartPeriod{period_id: current_period_id, target_superblock_number: current_target_superblock_number}
   sequence_number = 0
   sched_index.clear()
@@ -234,6 +251,8 @@ on_timer_tick(now_ts):
   # Deadline-triggered rollback if proof not accepted in time
   if now_ts > settlement_deadline_time and last_finalized_superblock_number != current_target_superblock_number - 1:
     emit RollBackTo{last_finalized_superblock_number, last_finalized_superblock_hash}
+    # Align sealed pointer back to finalized (cancel any sealed-but-unfinalized attempts)
+    last_sealed_superblock_number = last_finalized_superblock_number
 ```
 
 ### Sequencers
