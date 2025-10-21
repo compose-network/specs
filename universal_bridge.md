@@ -434,8 +434,11 @@ function receiveTokens(
 
 ## L1 <-> L2 Bridge For native rollups.
 
+We need to utilize the current OP-contracts with minimal changes. Namely the `StandardBridge.sol`, `CrossDomainMessenger.sol`, and thei L1/L2 couterparts are neccessary. 
+
 Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy a `ComposePortal` (similar to `OptimismPortal)  that will use a shared `ETHLockBox` and an `ERC20LockBox`. The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
 
+The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
 
 ## TODO: Can we do L1<->L2 bridge for external rollups
 
@@ -448,6 +451,6 @@ Currently Op-Succinct Sequencers pick up `TransactionDeposited` Events to relay 
 They check the address of the contract that originated the event. And perform a ZK proof that the event was included in the `recieptsRoot`
 
 In the case of an external interop sequencer, a malicious wrapped sequencer may send a non backed log. This won't be ZK proven but it will still become part of the external rollup canonical state. 
-The result will be that the connection with the Universal Shared Bridge will be severed.
+The result will be that the connection with the Universal Shared Bridge will be severed. <TODO: Ensure this is true>
 
 
