@@ -223,7 +223,7 @@ All `SEND` payloads use a single canonical ABI encoding:
 
 #### ACK payload:
 
-    abi.encode("OK")
+    Just empty `{}`
 
 ------------------------------------------------------------------------
 
@@ -441,6 +441,8 @@ Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract.
 The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
 
 ## TODO: Can we do L1<->L2 bridge for external rollups
+
+
 
 ### ETH
 Not w.o having liquidity available on the external rollup.
