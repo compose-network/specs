@@ -34,6 +34,8 @@ ___
     minting (via token's `onlyBridge` gate when called from the bridge
     context).
 
+    It should be deployed with CREATE2 so it has the same address on all chains.
+
 -   **Mailbox (per L2)**
     Minimal append-only message bus with read-once semantics per
     `(chainSrc, recipient, sessionId, label)`.
@@ -51,8 +53,7 @@ ___
 
 -   **Deterministic CET Addresses (Superchain-style)**
     Each CET contract is deployed **at the same address across all OP
-    L2s**, deterministically derived from the L1 canonical asset address
-    (using CREATE2/CREATE3).
+    L2s**, deterministically derived from the L1 canonical asset address using CREATE2.
 
     -   This eliminates the need for a per-chain registry.
     -   Mailbox payloads only need to carry the **`remoteToken` address**.
@@ -119,6 +120,8 @@ interface ICETFactory {
         string calldata symbol,
         address bridge
     ) external returns (address deployed);
+    // Salt derivation for deterministic addresses  
+    function computeSalt(address l1Asset) external pure returns (bytes32);
 }
 
 ICETFactory public cetFactory;
@@ -195,6 +198,15 @@ However, every message in a cross-chain exchange mapping to a single atomic oper
 
 The first 16 bytes serve as version. Currently the only canonical version is 0.
 
+Recommended way of generating `sessionID`:
+```
+VERSION | keccak256(abi.encode(  
+    sender,  
+    nonce,  
+    blockNumber,  
+   salt)) << 240
+```
+
 #### Replay Protection
 
 The `Read` function will return an error if it will be invoked more than once with the same `MessageHeader`
@@ -216,14 +228,14 @@ All `SEND` payloads use a single canonical ABI encoding:
 
     abi.encode(
       uint256 remoteChainID  // The native chain of the transferred asset
-      address remoteAsset,   // canonical asset address
+      address remoteAsset,   // canonical asset address on the escrow chain
       uint256 amount         // amount
     )
 
 
 #### ACK payload:
 
-    Just empty `{}`
+    Just empty `{}`. The ACK message should just be present. If it is missing the bridge reverts.
 
 ------------------------------------------------------------------------
 
@@ -257,25 +269,16 @@ function bridgeCETTo(
 
 ``` solidity
 /// Process funds reception on the destination chain
-/// @param chainSrc source chain identifier the funds are sent from
-/// @param chainDest dest chain identifier the funds are sent to
-/// @param sender address of the sender of the funds
-/// @param receiver address of the receiver of the funds
-/// @param sessionId identifier of the user session
-/// @return token address of the token that was transferred
+/// @param msgHeader the identifier you need to locate the message
 /// @return amount amount of tokens transferred
 function receiveTokens(
-    uint256 chainSrc,
-    uint256 chainDest,
-    address sender,
-    address receiver,
-    uint256 sessionId
+    MessageHeader msgHeader
 ) external returns (address token, uint256 amount);
 ```
 
 > Note: receiveTokens` sits **on the Bridge contract**
 > (so that when it calls `CrossChainMint`, the token sees
-> `msg.sender == Bridge` and respects the `onlyBridge` mint gate), while
+> respects the `onlyBridge` mint gate), while
 > still requiring `msg.sender == receiver` to enforce "only receiver can
 > claim".
 
@@ -402,7 +405,7 @@ function receiveTokens(
     }
 
     // 3) ACK back to source
-    mailbox.write(chainSrc, sender, sessionId, "ACK SEND", abi.encode("OK"));
+    mailbox.write(chainSrc, sender, sessionId, "ACK SEND", abi.encode({}));
 
     emit TokensReceived(token, amount);
     return (token, amount);
@@ -421,7 +424,7 @@ function receiveTokens(
 
 ------------------------------------------------------------------------
 
-###  End-to-End Lifecycle
+###  End-to-End L2<->L2 Lifecycle
 
 1.  Sender calls `bridgeERC20To` or `bridgeCETTo` with sessionId.
 2.  Source bridge locks/burns + writes `"SEND"` with L1 asset address.
@@ -434,15 +437,14 @@ function receiveTokens(
 
 ## L1 <-> L2 Bridge For native rollups.
 
-We need to utilize the current OP-contracts with minimal changes. Namely the `StandardBridge.sol`, `CrossDomainMessenger.sol`, and thei L1/L2 couterparts are neccessary. 
+We need to utilize the current OP-contracts with minimal changes. Namely the `StandardBridge.sol`, `CrossDomainMessenger.sol`. 
 
-Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy a `ComposePortal` (similar to `OptimismPortal)  that will use a shared `ETHLockBox` and an `ERC20LockBox`. The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
+Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy its portal that will use a shared `ETHLockBox` and an `ERC20LockBox`. The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
 
 The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
 
+
 ## TODO: Can we do L1<->L2 bridge for external rollups
-
-
 
 ### ETH
 Not w.o having liquidity available on the external rollup.
