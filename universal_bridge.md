@@ -186,9 +186,18 @@ interface IMailbox {
     function read(
         MessageHeader calldata header
     ) external returns (bytes memory);
+
+    // Enable `allowedCaller` to invoke `read` and `write`
+    function addToAllowList(address calldata allowedCaller
+    ) external onlyOwner 
+
+    // remove from allowlist
+    function removeFromAllowList(address calldata caller
+    ) external onlyOwner 
 }
 ```
 
+Only the canonical bridge contract should be allowed to access `read` and `write` function.
 
 
 #### SessionID
@@ -302,6 +311,8 @@ event CETBurned(address indexed token, address indexed sender, uint256 amount);
 event MailboxWrite(uint256 indexed chainId, address indexed account, uint256 indexed sessionId, string label);
 event TokensReceived(address indexed token, uint256 amount);
 event MailboxAckWrite(uint256 indexed chainId, address indexed account, uint256 indexed sessionId, string label);
+event AddToAllowList(address indexed allowedCaller)
+event RemoveFromAllowList(address indexed c aller)
 ```
 
 ------------------------------------------------------------------------
@@ -452,9 +463,10 @@ Not w.o having liquidity available on the external rollup.
 ### ERC-20
 
 Currently Op-Succinct Sequencers pick up `TransactionDeposited` Events to relay bridge messages.
-They check the address of the contract that originated the event. And perform a ZK proof that the event was included in the `recieptsRoot`
+They check the address of the contract that originated the event. And perform a ZK proof that the event was included in the `recieptsRoot`.
 
 In the case of an external interop sequencer, a malicious wrapped sequencer may send a non backed log. This won't be ZK proven but it will still become part of the external rollup canonical state. 
-The result will be that the connection with the Universal Shared Bridge will be severed. <TODO: Ensure this is true>
+The result will be that the connection with the Universal Shared Bridge will be severed.
+
 
 
