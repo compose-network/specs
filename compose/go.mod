@@ -1,4 +1,4 @@
-module compose
+module github.com/compose-network/specs/compose
 
 go 1.23.1
 
