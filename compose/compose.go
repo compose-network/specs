@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"encoding/hex"
 	"time"
 )
 
@@ -20,10 +21,14 @@ type BlockHash [32]byte
 type StateRoot [32]byte
 type ChainID uint64
 type SessionID uint64
-type InstanceID [32]byte
 type PeriodID uint64
 type SequenceNumber uint64
 type SuperblockNumber uint64
+type InstanceID [32]byte
+
+func (id InstanceID) String() string {
+	return hex.EncodeToString(id[:])
+}
 
 // Transaction represents a VM transaction payload.
 type Transaction interface {

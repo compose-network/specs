@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/compose-network/specs/compose"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -64,6 +65,8 @@ type SequencerState struct {
 
 	SealedBlockHead map[compose.PeriodID]SealedBlockHeader
 	SettledState    SettledState
+
+	logger zerolog.Logger
 }
 
 type sequencer struct {
@@ -77,6 +80,7 @@ func NewSequencer(
 	periodID compose.PeriodID,
 	targetSuperblock compose.SuperblockNumber,
 	settledState SettledState,
+	logger zerolog.Logger,
 ) Sequencer {
 	return &sequencer{
 		mu:     sync.Mutex{},
@@ -89,6 +93,7 @@ func NewSequencer(
 			Head:                   settledState.BlockHeader.Number,
 			SealedBlockHead:        make(map[compose.PeriodID]SealedBlockHeader),
 			SettledState:           settledState,
+			logger:                 logger,
 		},
 	}
 }
@@ -101,6 +106,11 @@ func (s *sequencer) StartPeriod(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.logger.Info().
+		Uint64("new_period_id", uint64(periodID)).
+		Uint64("target_superblock_number", uint64(targetSuperblockNumber)).
+		Msg("Starting new period")
+
 	s.PeriodID = periodID
 	s.TargetSuperblockNumber = targetSuperblockNumber
 
@@ -112,6 +122,7 @@ func (s *sequencer) StartPeriod(
 		if ok {
 			header = &block.BlockHeader
 		}
+		s.logger.Info().Msg("No pending block, triggering settlement pipeline")
 		s.prover.RequestProofs(header, targetSuperblockNumber-1)
 	}
 	return nil
@@ -129,6 +140,8 @@ func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
 	if blockNumber != s.Head+1 {
 		return ErrBlockNotSequential
 	}
+
+	s.logger.Info().Uint64("new_block_number", uint64(blockNumber)).Msg("Beginning block")
 
 	// Add immutable tags to the new block
 	s.PendingBlock = &PendingBlock{
@@ -159,6 +172,8 @@ func (s *sequencer) OnStartInstance(id compose.InstanceID) error {
 	if s.ActiveInstanceID != nil {
 		return ErrActiveInstanceExists
 	}
+	s.logger.Info().
+		Msg("Starting active instance, locking local tx inclusion")
 	s.ActiveInstanceID = &id
 	return nil
 }
@@ -173,6 +188,8 @@ func (s *sequencer) OnDecidedInstance(id compose.InstanceID) error {
 	if *s.ActiveInstanceID != id {
 		return ErrActiveInstanceMismatch
 	}
+	s.logger.Info().
+		Msg("Decided active instance, unlocking local tx inclusion")
 	s.ActiveInstanceID = nil
 	return nil
 }
@@ -184,6 +201,7 @@ func (s *sequencer) EndBlock(b BlockHeader) error {
 		return ErrBlockSealMismatch
 	}
 
+	s.logger.Info().Msg("Ending block")
 	s.SealedBlockHead[s.PendingBlock.PeriodID] = SealedBlockHeader{
 		BlockHeader:      b,
 		PeriodID:         s.PendingBlock.PeriodID,
@@ -198,6 +216,7 @@ func (s *sequencer) EndBlock(b BlockHeader) error {
 		if ok {
 			header = &block.BlockHeader
 		}
+		s.logger.Info().Msg("Period was ahead of sealed block, triggering settlement pipeline")
 		s.prover.RequestProofs(header, s.TargetSuperblockNumber-1)
 	}
 
@@ -213,6 +232,9 @@ func (s *sequencer) AdvanceSettledState(settledBlock SettledState) {
 	if settledBlock.SuperblockNumber <= s.SettledState.SuperblockNumber {
 		return
 	}
+	s.logger.Info().
+		Uint64("new_settled_superblock_number", uint64(settledBlock.SuperblockNumber)).
+		Msg("Advancing settled state")
 	s.SettledState = settledBlock
 }
 
@@ -228,6 +250,10 @@ func (s *sequencer) Rollback(
 	if !(superblockNumber == s.SettledState.SuperblockNumber && superblockHash == s.SettledState.SuperblockHash) {
 		return BlockHeader{}, ErrMismatchedFinalizedState
 	}
+
+	s.logger.Info().
+		Uint64("rollback_superblock_number", uint64(superblockNumber)).
+		Msg("Rolling back to settled state")
 
 	// Discard blocks with superblock number greater than the finalized one.
 	for blockPeriodID, sealedBlock := range s.SealedBlockHead {

@@ -152,6 +152,10 @@ func (r *SequencerInstance) Run() error {
 
 	// Consume mailbox messages.
 	if readRequest != nil {
+		r.logger.Info().
+			Uint64("source_chain_id", uint64(readRequest.SourceChainID)).
+			Str("label", readRequest.Label).
+			Msg("Simulation hit read miss, requesting mailbox message.")
 		r.expectedReadRequests = append(r.expectedReadRequests, *readRequest)
 		r.mu.Unlock()
 		return r.consumeReceivedMailboxMessagesAndSimulate()
@@ -264,6 +268,10 @@ func (r *SequencerInstance) ProcessDecidedMessage(decided bool) error {
 		return nil
 	}
 
+	r.logger.Info().
+		Bool("received_decided", decided).
+		Msg("Processing decided message from SP")
+
 	r.state = SeqStateDone
 	if decided {
 		r.decisionState = compose.DecisionStateAccepted
@@ -281,8 +289,13 @@ func (r *SequencerInstance) Timeout() {
 	defer r.mu.Unlock()
 
 	if r.state == SeqStateWaitingDecided || r.state == SeqStateDone {
+		r.logger.Info().
+			Msg("Ignoring timeout because already waiting for decided or done")
 		return
 	}
+
+	r.logger.Info().
+		Msg("Timeout occurred, rejecting instance")
 
 	r.state = SeqStateDone
 	r.decisionState = compose.DecisionStateRejected

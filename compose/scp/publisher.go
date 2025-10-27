@@ -54,7 +54,7 @@ func NewPublisherInstance(
 	return r, nil
 }
 
-// Run performs the initial side-effect to start the instance with participants.
+// Run performs launches the instance by sending a message to all participants.
 // Call this once after creation.
 func (r *PublisherInstance) Run() {
 	r.network.SendStartInstance(r.instance)

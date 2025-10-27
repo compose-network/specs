@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/compose-network/specs/compose"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -57,6 +58,8 @@ type PublisherState struct {
 	// StartPeriods are rejected if the next superblock is bigger than LastFinalizedSuperblockNumber + ProofWindow.
 	// 0 value means no window constrain.
 	ProofWindow uint64
+
+	logger zerolog.Logger
 }
 
 type publisher struct {
@@ -74,6 +77,7 @@ func NewPublisher(messenger Messenger,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockHash compose.SuperBlockHash,
 	proofWindow uint64,
+	logger zerolog.Logger,
 ) Publisher {
 	return &publisher{
 		mu:        sync.Mutex{},
@@ -91,6 +95,8 @@ func NewPublisher(messenger Messenger,
 			ActiveChains:   make(map[compose.ChainID]bool),
 
 			ProofWindow: proofWindow,
+
+			logger: logger,
 		},
 	}
 }
@@ -101,17 +107,25 @@ func (p *publisher) StartPeriod() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	nextSuperblock := p.TargetSuperblockNumber + 1
+
 	// Proof window constrain
 	// If the oldest pending superblock is older than ProofWindow, reject starting the new period
 	// as the upper layer should have called ProofTimeout already.
-	nextSuperblock := p.TargetSuperblockNumber + 1
-	if nextSuperblock > p.LastFinalizedSuperblockNumber+compose.SuperblockNumber(1+p.ProofWindow) {
-		return fmt.Errorf("target superblock is %d, expected %d: %w",
-			p.TargetSuperblockNumber, p.LastFinalizedSuperblockNumber+1, ErrCannotStartPeriod)
+	if p.ProofWindow != 0 { // 0 means no constrain
+		if nextSuperblock > p.LastFinalizedSuperblockNumber+compose.SuperblockNumber(1+p.ProofWindow) {
+			return fmt.Errorf("target superblock is %d, expected %d: %w",
+				p.TargetSuperblockNumber, p.LastFinalizedSuperblockNumber+1, ErrCannotStartPeriod)
+		}
 	}
 
 	p.PeriodID++
 	p.TargetSuperblockNumber = nextSuperblock
+
+	p.logger.Info().
+		Uint64("new_period_id", uint64(p.PeriodID)).
+		Uint64("target_superblock_number", uint64(p.TargetSuperblockNumber)).
+		Msg("Starting new period")
 
 	p.messenger.BroadcastStartPeriod(p.PeriodID, p.TargetSuperblockNumber)
 
@@ -153,6 +167,14 @@ func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instan
 	for _, chainID := range chains {
 		p.ActiveChains[chainID] = true
 	}
+
+	p.logger.Info().
+		Str("instance_id", instance.ID.String()).
+		Uint64("period_id", uint64(instance.PeriodID)).
+		Uint64("sequence_number", uint64(instance.SequenceNumber)).
+		Any("chains", chains).
+		Msg("Starting new instance")
+
 	return instance, nil
 }
 
@@ -174,6 +196,11 @@ func (p *publisher) DecideInstance(instance compose.Instance) error {
 	for _, chainID := range chains {
 		delete(p.ActiveChains, chainID)
 	}
+
+	p.logger.Info().
+		Str("instance_id", instance.ID.String()).
+		Msg("Decided instance, removing active chains")
+
 	return nil
 }
 
@@ -188,6 +215,11 @@ func (p *publisher) AdvanceSettledState(
 	if superblockNumber <= p.LastFinalizedSuperblockNumber {
 		return ErrOldSettledState
 	}
+
+	p.logger.Info().
+		Uint64("new_finalized_superblock_number", uint64(superblockNumber)).
+		Msg("Advancing finalized settled state")
+
 	p.LastFinalizedSuperblockNumber = superblockNumber
 	p.LastFinalizedSuperblockHash = superblockHash
 	return nil
@@ -198,6 +230,10 @@ func (p *publisher) AdvanceSettledState(
 func (p *publisher) ProofTimeout() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	p.logger.Warn().
+		Uint64("finalized_superblock_number", uint64(p.LastFinalizedSuperblockNumber)).
+		Msg("Proof timeout occurred, rolling back to last finalized superblock")
 
 	p.ActiveChains = make(map[compose.ChainID]bool)
 	p.SequenceNumber = 0
