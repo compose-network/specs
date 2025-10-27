@@ -34,7 +34,7 @@ func TestSequencer_VoteTrueOnImmediateSuccess(t *testing.T) {
 		XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "a"}, fakeTx{chain: 2, name: "b"}},
 	}
 
-	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{9})
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{9}, testLogger())
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
 
@@ -64,7 +64,7 @@ func TestSequencer_ReadThenMailboxThenSuccess(t *testing.T) {
 	net := &fakeSequencerNetwork{}
 	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "a"}}}
 
-	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{})
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
 
@@ -92,7 +92,7 @@ func TestSequencer_MultipleReadsOutOfOrder(t *testing.T) {
 	net := &fakeSequencerNetwork{}
 	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "x"}}}
 
-	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{})
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
 
@@ -115,7 +115,7 @@ func TestSequencer_TimeoutBeforeVoteSendsFalse(t *testing.T) {
 	net := &fakeSequencerNetwork{}
 	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "x"}}}
 
-	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{})
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
 	assert.Equal(t, SeqStateSimulating, seq.state)
@@ -137,11 +137,11 @@ func TestSequencer_SimulationErrorVotesFalse(t *testing.T) {
 	net := &fakeSequencerNetwork{}
 	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "x"}}}
 
-	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{})
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
 	// Run fails with a stable error string; still sends a vote(false).
 	errRun := seq.Run()
-	require.EqualError(t, errRun, "unknown simulation failure")
+	require.EqualError(t, errRun, "simulating sequencer failed: boom")
 	if assert.Len(t, net.votes, 1) {
 		assert.False(t, net.votes[0])
 	}
@@ -162,7 +162,7 @@ func TestSequencer_FiltersTransactionsByChainID(t *testing.T) {
 	}
 	inst := compose.Instance{XTRequest: txs}
 
-	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{})
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
 
@@ -183,7 +183,7 @@ func TestSequencer_NoTransactions_ReturnsErrNoTransactions(t *testing.T) {
 		fakeTx{chain: compose.ChainID(7), name: "other"},
 	}}
 
-	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{})
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.ErrorIs(t, err, ErrNoTransactions)
 	assert.Nil(t, seq)
 	assert.Len(t, net.votes, 0)

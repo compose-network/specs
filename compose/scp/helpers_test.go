@@ -20,27 +20,31 @@ type fakePublisherNetwork struct {
 	startXT       []compose.Transaction
 
 	decidedCalled int
-	decidedValues []bool
+	decisions     []struct {
+		ID    compose.InstanceID
+		Value bool
+	}
 }
 
-func (f *fakePublisherNetwork) SendStartInstance(
-	instance compose.Instance,
-	xTRequest []compose.Transaction,
-) {
+func (f *fakePublisherNetwork) SendStartInstance(instance compose.Instance) {
 	f.startCalled++
 	f.startInstance = instance
-	f.startXT = append([]compose.Transaction(nil), xTRequest...)
+	f.startXT = append([]compose.Transaction(nil), instance.XTRequest...)
 }
 
-func (f *fakePublisherNetwork) SendDecided(decided bool) {
+func (f *fakePublisherNetwork) SendDecided(id compose.InstanceID, decided bool) {
 	f.decidedCalled++
-	f.decidedValues = append(f.decidedValues, decided)
+	f.decisions = append(f.decisions, struct {
+		ID    compose.InstanceID
+		Value bool
+	}{ID: id, Value: decided})
 }
 
 // simulateResp encodes a single response step for the fake engine.
 type simulateResp struct {
-	read *MailboxMessageHeader
-	err  error
+	read  *MailboxMessageHeader
+	write []MailboxMessage
+	err   error
 }
 
 // fakeExecutionEngine implements ExecutionEngine with scripted responses.
@@ -53,16 +57,17 @@ type fakeExecutionEngine struct {
 
 func (e *fakeExecutionEngine) ChainID() compose.ChainID { return e.id }
 
-func (e *fakeExecutionEngine) Simulate(req SimulationRequest) (*MailboxMessageHeader, error) {
+func (e *fakeExecutionEngine) Simulate(req SimulationRequest) (*MailboxMessageHeader, []MailboxMessage, error) {
 	e.lastReq = req
 	if e.calls < len(e.steps) {
 		s := e.steps[e.calls]
 		e.calls++
-		return s.read, s.err
+		writeCopy := append([]MailboxMessage(nil), s.write...)
+		return s.read, writeCopy, s.err
 	}
 	// Default: success, no read
 	e.calls++
-	return nil, nil
+	return nil, nil, nil
 }
 
 // fakeSequencerNetwork collects votes and mailbox messages.

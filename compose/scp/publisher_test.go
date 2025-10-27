@@ -1,13 +1,19 @@
 package scp
 
 import (
+	"io"
 	"testing"
 
 	"github.com/compose-network/specs/compose"
+	"github.com/rs/zerolog"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func testLogger() zerolog.Logger {
+	return zerolog.New(io.Discard)
+}
 
 func TestPublisher_AllTrueVotesDecidesTrue(t *testing.T) {
 	net := &fakePublisherNetwork{}
@@ -21,8 +27,7 @@ func TestPublisher_AllTrueVotesDecidesTrue(t *testing.T) {
 		},
 	}
 
-	xt := []compose.Transaction{fakeTx{chain: 1, name: "a"}, fakeTx{chain: 2, name: "b"}}
-	pub, err := NewPublisherInstance(inst, net, xt)
+	pub, err := NewPublisherInstance(inst, net, testLogger())
 	require.NoError(t, err)
 
 	// No start until Run is called
@@ -36,13 +41,14 @@ func TestPublisher_AllTrueVotesDecidesTrue(t *testing.T) {
 
 	// Duplicate while still waiting should error with a stable message
 	errDup := pub.ProcessVote(compose.ChainID(1), true)
-	require.EqualError(t, errDup, "Received duplicate vote")
+	require.ErrorIs(t, errDup, ErrDuplicatedVote)
 
 	// Second vote true from chain 2 triggers decide(true)
 	require.NoError(t, pub.ProcessVote(compose.ChainID(2), true))
 	assert.Equal(t, 1, net.decidedCalled)
-	if assert.Len(t, net.decidedValues, 1) {
-		assert.True(t, net.decidedValues[0])
+	if assert.Len(t, net.decisions, 1) {
+		assert.True(t, net.decisions[0].Value)
+		assert.Equal(t, inst.ID, net.decisions[0].ID)
 	}
 
 	// Duplicate after decision is ignored
@@ -62,15 +68,16 @@ func TestPublisher_AnyFalseDecidesFalseEarly(t *testing.T) {
 			fakeTx{chain: compose.ChainID(12), name: "c"},
 		},
 	}
-	pub, err := NewPublisherInstance(inst, net, inst.XTRequest)
+	pub, err := NewPublisherInstance(inst, net, testLogger())
 	require.NoError(t, err)
 	pub.Run()
 
 	// First false triggers immediate decision
 	require.NoError(t, pub.ProcessVote(compose.ChainID(11), false))
 	assert.Equal(t, 1, net.decidedCalled)
-	if assert.Len(t, net.decidedValues, 1) {
-		assert.False(t, net.decidedValues[0])
+	if assert.Len(t, net.decisions, 1) {
+		assert.False(t, net.decisions[0].Value)
+		assert.Equal(t, inst.ID, net.decisions[0].ID)
 	}
 
 	// Further votes are ignored
@@ -86,14 +93,15 @@ func TestPublisher_TimeoutDecidesFalse(t *testing.T) {
 			fakeTx{chain: compose.ChainID(6), name: "b"},
 		},
 	}
-	pub, err := NewPublisherInstance(inst, net, inst.XTRequest)
+	pub, err := NewPublisherInstance(inst, net, testLogger())
 	require.NoError(t, err)
 	pub.Run()
 
 	require.NoError(t, pub.Timeout())
 	assert.Equal(t, 1, net.decidedCalled)
-	if assert.Len(t, net.decidedValues, 1) {
-		assert.False(t, net.decidedValues[0])
+	if assert.Len(t, net.decisions, 1) {
+		assert.False(t, net.decisions[0].Value)
+		assert.Equal(t, inst.ID, net.decisions[0].ID)
 	}
 
 	// Timeout after done is ignored
@@ -109,7 +117,7 @@ func TestPublisher_TimeoutAfterTrueDecisionIgnored(t *testing.T) {
 			fakeTx{chain: compose.ChainID(2), name: "b"},
 		},
 	}
-	pub, err := NewPublisherInstance(inst, net, inst.XTRequest)
+	pub, err := NewPublisherInstance(inst, net, testLogger())
 	require.NoError(t, err)
 	pub.Run()
 
@@ -117,14 +125,15 @@ func TestPublisher_TimeoutAfterTrueDecisionIgnored(t *testing.T) {
 	require.NoError(t, pub.ProcessVote(compose.ChainID(1), true))
 	require.NoError(t, pub.ProcessVote(compose.ChainID(2), true))
 	assert.Equal(t, 1, net.decidedCalled)
-	if assert.Len(t, net.decidedValues, 1) {
-		assert.True(t, net.decidedValues[0])
+	if assert.Len(t, net.decisions, 1) {
+		assert.True(t, net.decisions[0].Value)
+		assert.Equal(t, inst.ID, net.decisions[0].ID)
 	}
 
 	// Timeout after decision should be ignored
 	require.NoError(t, pub.Timeout())
 	assert.Equal(t, 1, net.decidedCalled)
-	assert.Len(t, net.decidedValues, 1)
+	assert.Len(t, net.decisions, 1)
 }
 
 func TestPublisher_OneVoteThenTimeout_DecidesFalse(t *testing.T) {
@@ -135,7 +144,7 @@ func TestPublisher_OneVoteThenTimeout_DecidesFalse(t *testing.T) {
 			fakeTx{chain: compose.ChainID(2), name: "b"},
 		},
 	}
-	pub, err := NewPublisherInstance(inst, net, inst.XTRequest)
+	pub, err := NewPublisherInstance(inst, net, testLogger())
 	require.NoError(t, err)
 	pub.Run()
 
@@ -146,7 +155,8 @@ func TestPublisher_OneVoteThenTimeout_DecidesFalse(t *testing.T) {
 	// Timeout should decide false (not true).
 	require.NoError(t, pub.Timeout())
 	assert.Equal(t, 1, net.decidedCalled)
-	if assert.Len(t, net.decidedValues, 1) {
-		assert.False(t, net.decidedValues[0])
+	if assert.Len(t, net.decisions, 1) {
+		assert.False(t, net.decisions[0].Value)
+		assert.Equal(t, inst.ID, net.decisions[0].ID)
 	}
 }
