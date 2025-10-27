@@ -10,7 +10,6 @@ import (
 
 var (
 	ErrCannotStartInstance = errors.New("can not start any instance")
-	ErrInstanceNotFound    = errors.New("instance not found")
 	ErrCannotStartPeriod   = errors.New("can not start period")
 	ErrChainNotActive      = errors.New("chain not active")
 	ErrOldSettledState     = errors.New("can not advance to older settled state")
@@ -55,7 +54,6 @@ type PublisherState struct {
 	SequenceNumber compose.SequenceNumber   // Per-period sequence counter (monotone)
 	ActiveChains   map[compose.ChainID]bool // Chains with active instances
 
-	ERChainID compose.ChainID // External Rollup ChainID
 }
 
 type publisher struct {
@@ -69,7 +67,6 @@ func NewPublisher(messenger Messenger,
 	targetSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockHash compose.SuperBlockHash,
-	erChainID compose.ChainID,
 ) Publisher {
 	return &publisher{
 		mu:        sync.Mutex{},
@@ -85,8 +82,6 @@ func NewPublisher(messenger Messenger,
 			// Instances scheduling
 			SequenceNumber: 0,
 			ActiveChains:   make(map[compose.ChainID]bool),
-
-			ERChainID: erChainID,
 		},
 	}
 }

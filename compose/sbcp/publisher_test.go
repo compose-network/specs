@@ -18,7 +18,6 @@ func TestPublisher_StartPeriod_basic_broadcast_and_reset(t *testing.T) {
 		compose.SuperblockNumber(8),
 		compose.SuperblockNumber(7),
 		compose.SuperBlockHash{9},
-		0,
 	)
 
 	// Start new period P=10 → target becomes F+1 = 8
@@ -35,7 +34,7 @@ func TestPublisher_StartPeriod_basic_broadcast_and_reset(t *testing.T) {
 func TestPublisher_StartPeriod_error_when_target_misaligned(t *testing.T) {
 	m := &fakeMessenger{}
 	// finalized = 7, but target = 10 (expected 8); StartPeriod should return an error
-	pub := NewPublisher(m, compose.PeriodID(5), compose.SuperblockNumber(10), compose.SuperblockNumber(7), compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, compose.PeriodID(5), compose.SuperblockNumber(10), compose.SuperblockNumber(7), compose.SuperBlockHash{1})
 
 	err := pub.StartPeriod(compose.PeriodID(6))
 	require.ErrorIs(t, err, ErrCannotStartPeriod)
@@ -45,7 +44,7 @@ func TestPublisher_StartPeriod_error_when_target_misaligned(t *testing.T) {
 
 func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 	m := &fakeMessenger{}
-	pub := NewPublisher(m, 5, 6, 5, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, 5, 6, 5, compose.SuperBlockHash{1})
 
 	// First req touches chains {1,2}
 	req1 := []compose.Transaction{
@@ -70,7 +69,7 @@ func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 
 func TestPublisher_StartInstance_conflicting_set_rejected(t *testing.T) {
 	m := &fakeMessenger{}
-	pub := NewPublisher(m, 5, 6, 5, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, 5, 6, 5, compose.SuperBlockHash{1})
 
 	// Activate {1,2}
 	_, err := pub.StartInstance(
@@ -87,7 +86,7 @@ func TestPublisher_StartInstance_conflicting_set_rejected(t *testing.T) {
 
 func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
 	m := &fakeMessenger{}
-	pub := NewPublisher(m, 2, 3, 2, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, 2, 3, 2, compose.SuperBlockHash{1})
 
 	inst, err := pub.StartInstance([]compose.Transaction{
 		fakeChainTx{chain: 7, body: []byte("a")},
@@ -103,7 +102,7 @@ func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
 func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 	m := &fakeMessenger{}
 	// Start aligned: target = finalized + 1 = 10
-	pub := NewPublisher(m, 10, 10, 9, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, 10, 10, 9, compose.SuperBlockHash{1})
 
 	i1, err := pub.StartInstance([]compose.Transaction{
 		fakeChainTx{1, []byte("a1")},
@@ -133,7 +132,7 @@ func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 
 func TestPublisher_StartInstance_broadcast_payload_matches_return(t *testing.T) {
 	messenger := &fakeMessenger{}
-	pub := NewPublisher(messenger, 1, 2, 1, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(messenger, 1, 2, 1, compose.SuperBlockHash{1})
 	req := []compose.Transaction{fakeChainTx{1, []byte("x")}, fakeChainTx{2, []byte("y")}}
 
 	inst, err := pub.StartInstance(req)
@@ -145,7 +144,7 @@ func TestPublisher_StartInstance_broadcast_payload_matches_return(t *testing.T) 
 
 func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.T) {
 	m := &fakeMessenger{}
-	pub := NewPublisher(m, 1, 2, 1, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, 1, 2, 1, compose.SuperBlockHash{1})
 	inst, err := pub.StartInstance(
 		[]compose.Transaction{fakeChainTx{1, []byte("a")}, fakeChainTx{2, []byte("b")}},
 	)
@@ -168,7 +167,7 @@ func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.
 
 func TestPublisher_AdvanceSettledState_monotonic(t *testing.T) {
 	m := &fakeMessenger{}
-	pub := NewPublisher(m, 1, 2, 1, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, 1, 2, 1, compose.SuperBlockHash{1})
 	// Advance forward
 	err := pub.AdvanceSettledState(2, compose.SuperBlockHash{9})
 	require.NoError(t, err)
@@ -180,7 +179,7 @@ func TestPublisher_AdvanceSettledState_monotonic(t *testing.T) {
 func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 	m := &fakeMessenger{}
 	finalized := compose.SuperblockNumber(5)
-	pub := NewPublisher(m, 3, 4, finalized, compose.SuperBlockHash{7}, 0)
+	pub := NewPublisher(m, 3, 4, finalized, compose.SuperBlockHash{7})
 
 	// Activate some chains
 	_, err := pub.StartInstance(
@@ -198,7 +197,7 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 
 func TestPublisher_StartInstance_invalid_requests(t *testing.T) {
 	m := &fakeMessenger{}
-	pub := NewPublisher(m, 1, 2, 1, compose.SuperBlockHash{1}, 0)
+	pub := NewPublisher(m, 1, 2, 1, compose.SuperBlockHash{1})
 
 	// Nil request
 	_, err := pub.StartInstance(nil)
