@@ -1,8 +1,9 @@
 package sbcp
 
 import (
-	"github.com/compose-network/specs/compose"
 	"testing"
+
+	"github.com/compose-network/specs/compose"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 	}
 	inst1, err := pub.StartInstance(req1)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []compose.ChainID{1, 2}, inst1.Chains)
+	assert.ElementsMatch(t, []compose.ChainID{1, 2}, inst1.Chains())
 	require.Len(t, m.startInstances, 1)
 
 	// Disjoint {3,4} should be allowed
@@ -63,7 +64,7 @@ func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 	}
 	inst2, err := pub.StartInstance(req2)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []compose.ChainID{3, 4}, inst2.Chains)
+	assert.ElementsMatch(t, []compose.ChainID{3, 4}, inst2.Chains())
 	require.Len(t, m.startInstances, 2)
 }
 
@@ -94,8 +95,9 @@ func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
 		fakeChainTx{chain: 8, body: []byte("c")},
 	})
 	require.NoError(t, err)
-	assert.Len(t, inst.Chains, 2)
-	assert.ElementsMatch(t, []compose.ChainID{7, 8}, inst.Chains)
+	chains := inst.Chains()
+	assert.Len(t, chains, 2)
+	assert.ElementsMatch(t, []compose.ChainID{7, 8}, chains)
 }
 
 func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {

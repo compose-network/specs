@@ -4,14 +4,16 @@ import (
 	"time"
 )
 
-var (
-	GenesisTime    = time.Date(2025, 10, 25, 0, 0, 0, 0, time.UTC)
+const (
+	// Duration of a superblock period (10 Ethereum epochs)
 	PeriodDuration = 10 * (32 * 12) * time.Second // 10 Ethereum epochs
 
-	// Allowed proving time since boundary (default: two-thirds of period)
+	// Allowed window (in number of periods) to submit a valid ZK proof for a superblock.
+	// After this window, the publisher should trigger a rollback.
 	ProofWindow = 24 * 7
 )
 
+type EthAddress [20]byte
 type TxHash [32]byte
 type SuperBlockHash [32]byte
 type BlockHash [32]byte
@@ -20,11 +22,6 @@ type ChainID uint64
 type SessionID uint64
 type InstanceID [32]byte
 type PeriodID uint64
-
-func (p PeriodID) Time() time.Time {
-	return GenesisTime.Add(time.Duration(p) * PeriodDuration)
-}
-
 type SequenceNumber uint64
 type SuperblockNumber uint64
 
@@ -34,14 +31,27 @@ type Transaction interface {
 	Bytes() []byte
 }
 
-type EthAddress [20]byte
-
 type Instance struct {
 	ID             InstanceID
 	PeriodID       PeriodID
 	SequenceNumber SequenceNumber
-	Chains         []ChainID
 	XTRequest      []Transaction
+}
+
+func (i *Instance) Chains() []ChainID {
+	return ChainsFromRequest(i.XTRequest)
+}
+
+func ChainsFromRequest(req []Transaction) []ChainID {
+	chainsMap := make(map[ChainID]bool)
+	for _, r := range req {
+		chainsMap[r.ChainID()] = true
+	}
+	chains := make([]ChainID, 0, len(chainsMap))
+	for chainID := range chainsMap {
+		chains = append(chains, chainID)
+	}
+	return chains
 }
 
 type DecisionState int

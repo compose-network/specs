@@ -3,8 +3,9 @@ package sbcp
 import (
 	"errors"
 	"fmt"
-	"github.com/compose-network/specs/compose"
 	"sync"
+
+	"github.com/compose-network/specs/compose"
 )
 
 var (
@@ -119,7 +120,7 @@ func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instan
 		return compose.Instance{}, ErrInvalidRequest
 	}
 
-	chains := getChainsFromRequest(request)
+	chains := compose.ChainsFromRequest(request)
 	// Can't start instance if any participant is already active
 	if p.anyChainAlreadyActive(chains) {
 		return compose.Instance{}, ErrCannotStartInstance
@@ -136,7 +137,6 @@ func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instan
 		),
 		PeriodID:       p.PeriodID,
 		SequenceNumber: p.SequenceNumber,
-		Chains:         chains,
 		XTRequest:      request,
 	}
 	// Set chains as active
@@ -153,13 +153,15 @@ func (p *publisher) DecideInstance(instance compose.Instance) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, chainID := range instance.Chains {
+	chains := instance.Chains()
+
+	for _, chainID := range chains {
 		if _, ok := p.ActiveChains[chainID]; !ok {
 			return ErrChainNotActive
 		}
 	}
 
-	for _, chainID := range instance.Chains {
+	for _, chainID := range chains {
 		delete(p.ActiveChains, chainID)
 	}
 	return nil
@@ -200,16 +202,4 @@ func (p *publisher) anyChainAlreadyActive(chains []compose.ChainID) bool {
 		}
 	}
 	return false
-}
-
-func getChainsFromRequest(req []compose.Transaction) []compose.ChainID {
-	chainsMap := make(map[compose.ChainID]bool)
-	for _, r := range req {
-		chainsMap[r.ChainID()] = true
-	}
-	chains := make([]compose.ChainID, 0, len(chainsMap))
-	for chainID := range chainsMap {
-		chains = append(chains, chainID)
-	}
-	return chains
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+
 	"github.com/compose-network/specs/compose"
 )
 
@@ -19,7 +20,7 @@ func generateInstanceID(
 	buf := bytes.NewBuffer(nil)
 
 	// Encode period timestamp (nanoseconds) as 8 bytes big-endian
-	binary.BigEndian.PutUint64(b[:], uint64(periodID.Time().UnixNano()))
+	binary.BigEndian.PutUint64(b[:], uint64(periodID))
 	buf.Write(b[:])
 
 	// Encode sequence number as 8 bytes big-endian

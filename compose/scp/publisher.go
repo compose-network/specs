@@ -2,8 +2,9 @@ package scp
 
 import (
 	"errors"
-	"github.com/compose-network/specs/compose"
 	"sync"
+
+	"github.com/compose-network/specs/compose"
 )
 
 type PublisherNetwork interface {
@@ -17,8 +18,8 @@ type PublisherInstance struct {
 	// Dependencies
 	network PublisherNetwork
 	// SCP instance
-	instance  compose.Instance
-	xTRequest []compose.Transaction
+	instance compose.Instance
+	chains   []compose.ChainID
 
 	// Protocol state
 	decisionState compose.DecisionState
@@ -35,7 +36,7 @@ func NewPublisherInstance(
 		mu:            sync.Mutex{},
 		network:       network,
 		instance:      instance,
-		xTRequest:     xTRequest,
+		chains:        instance.Chains(),
 		decisionState: compose.DecisionStatePending,
 		votes:         make(map[compose.ChainID]bool),
 	}
@@ -46,7 +47,7 @@ func NewPublisherInstance(
 // Run performs the initial side-effect to start the instance with participants.
 // Call this once after creation.
 func (r *PublisherInstance) Run() {
-	r.network.SendStartInstance(r.instance, r.xTRequest)
+	r.network.SendStartInstance(r.instance, r.instance.XTRequest)
 }
 
 func (r *PublisherInstance) ProcessVote(sender compose.ChainID, vote bool) error {
@@ -72,7 +73,7 @@ func (r *PublisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 	}
 
 	// Check if all votes are in
-	if len(r.votes) == len(r.instance.Chains) {
+	if len(r.votes) == len(r.chains) {
 		r.decisionState = compose.DecisionStateAccepted
 		r.network.SendDecided(true)
 		return nil
