@@ -18,7 +18,7 @@ var (
 
 type Publisher interface {
 	// StartPeriod is called whenever a new period starts (i.e. CurrEthereumEpoch % 10 == 0).
-	StartPeriod(newPeriodID compose.PeriodID) error
+	StartPeriod() error
 	// StartInstance is called by the upper layer to try starting a new instance from the queued requests.
 	StartInstance(req []compose.Transaction) (compose.Instance, error)
 	// DecideInstance is called once an instance gets decided.
@@ -35,7 +35,6 @@ type Publisher interface {
 
 type Messenger interface {
 	BroadcastStartPeriod(periodID compose.PeriodID, targetSuperblockNumber compose.SuperblockNumber)
-	BroadcastStartInstance(instance compose.Instance)
 	BroadcastRollback(
 		superblockNumber compose.SuperblockNumber,
 		superblockHash compose.SuperBlockHash,
@@ -54,6 +53,10 @@ type PublisherState struct {
 	SequenceNumber compose.SequenceNumber   // Per-period sequence counter (monotone)
 	ActiveChains   map[compose.ChainID]bool // Chains with active instances
 
+	// Proof window duration (in number of superblocks/periods) through which a pending superblock can be proven.
+	// StartPeriods are rejected if the next superblock is bigger than LastFinalizedSuperblockNumber + ProofWindow.
+	// 0 value means no window constrain.
+	ProofWindow uint64
 }
 
 type publisher struct {
@@ -62,18 +65,22 @@ type publisher struct {
 	PublisherState
 }
 
+// NewPublisher creates a new Publisher instance given a config, a period ID and the last settled state.
+// TargetSuperblockNumber is set to lastFinalizedSuperblockNumber initially.
+// StartPeriod needs to be called to start the first period, automatically incrementing PeriodID and TargetSuperblockNumber.
+// Thus, if the current period is N, call NewPublisher with periodID = N-1.
 func NewPublisher(messenger Messenger,
 	periodID compose.PeriodID,
-	targetSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockHash compose.SuperBlockHash,
+	proofWindow uint64,
 ) Publisher {
 	return &publisher{
 		mu:        sync.Mutex{},
 		messenger: messenger,
 		PublisherState: PublisherState{
 			PeriodID:               periodID,
-			TargetSuperblockNumber: targetSuperblockNumber,
+			TargetSuperblockNumber: lastFinalizedSuperblockNumber,
 
 			// Last finalized state in L1
 			LastFinalizedSuperblockNumber: lastFinalizedSuperblockNumber,
@@ -82,22 +89,29 @@ func NewPublisher(messenger Messenger,
 			// Instances scheduling
 			SequenceNumber: 0,
 			ActiveChains:   make(map[compose.ChainID]bool),
+
+			ProofWindow: proofWindow,
 		},
 	}
 }
 
 // StartPeriod is called whenever a new period starts (i.e. CurrEthereumEpoch % 10 == 0).
-func (p *publisher) StartPeriod(newPeriodID compose.PeriodID) error {
+// SequenceNumber is reset to 0, though ActiveChains is kept because instances may exist through the boundary until finished.
+func (p *publisher) StartPeriod() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.TargetSuperblockNumber != p.LastFinalizedSuperblockNumber+1 {
+	// Proof window constrain
+	// If the oldest pending superblock is older than ProofWindow, reject starting the new period
+	// as the upper layer should have called ProofTimeout already.
+	nextSuperblock := p.TargetSuperblockNumber + 1
+	if nextSuperblock > p.LastFinalizedSuperblockNumber+compose.SuperblockNumber(1+p.ProofWindow) {
 		return fmt.Errorf("target superblock is %d, expected %d: %w",
 			p.TargetSuperblockNumber, p.LastFinalizedSuperblockNumber+1, ErrCannotStartPeriod)
 	}
 
-	p.PeriodID = newPeriodID
-	p.TargetSuperblockNumber++
+	p.PeriodID++
+	p.TargetSuperblockNumber = nextSuperblock
 
 	p.messenger.BroadcastStartPeriod(p.PeriodID, p.TargetSuperblockNumber)
 
@@ -105,7 +119,9 @@ func (p *publisher) StartPeriod(newPeriodID compose.PeriodID) error {
 	return nil
 }
 
-// StartInstance loops through the queued XT requests and tries one instance if possible.
+// StartInstance is called by the upper layer to try starting a new instance.
+// If the instance can not be started, it returns an error.
+// Else, it returns the created instance.
 func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instance, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -124,7 +140,6 @@ func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instan
 	// Create instance
 	p.SequenceNumber++
 	instance := compose.Instance{
-		// TODO: generate unique ID
 		ID: generateInstanceID(
 			p.PeriodID,
 			p.SequenceNumber,
@@ -138,8 +153,6 @@ func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instan
 	for _, chainID := range chains {
 		p.ActiveChains[chainID] = true
 	}
-	// Broadcast
-	p.messenger.BroadcastStartInstance(instance)
 	return instance, nil
 }
 
@@ -150,18 +163,21 @@ func (p *publisher) DecideInstance(instance compose.Instance) error {
 
 	chains := instance.Chains()
 
+	// Check instance chains are really active
 	for _, chainID := range chains {
 		if _, ok := p.ActiveChains[chainID]; !ok {
 			return ErrChainNotActive
 		}
 	}
 
+	// Remove chains from active
 	for _, chainID := range chains {
 		delete(p.ActiveChains, chainID)
 	}
 	return nil
 }
 
+// AdvanceSettledState is called when L1 emits a new settled state event
 func (p *publisher) AdvanceSettledState(
 	superblockNumber compose.SuperblockNumber,
 	superblockHash compose.SuperBlockHash,
@@ -177,11 +193,14 @@ func (p *publisher) AdvanceSettledState(
 	return nil
 }
 
+// ProofTimeout is called whenever a pending superblock is not proven within the allowed proof window.
+// It triggers a rollback to the last finalized superblock, resetting the active chains and sequence number.
 func (p *publisher) ProofTimeout() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	p.ActiveChains = make(map[compose.ChainID]bool)
+	p.SequenceNumber = 0
 	p.TargetSuperblockNumber = p.LastFinalizedSuperblockNumber + 1
 	p.messenger.BroadcastRollback(p.LastFinalizedSuperblockNumber, p.LastFinalizedSuperblockHash)
 }

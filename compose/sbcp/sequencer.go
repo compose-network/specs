@@ -2,8 +2,9 @@ package sbcp
 
 import (
 	"errors"
-	"github.com/compose-network/specs/compose"
 	"sync"
+
+	"github.com/compose-network/specs/compose"
 )
 
 var (
@@ -28,19 +29,19 @@ type Sequencer interface {
 		currentPeriodID compose.PeriodID,
 	) (BlockHeader, error)
 
-	// AdvancedSettledState is called when the L1 settlement event has occurred.
+	// AdvanceSettledState is called when the L1 settlement event has occurred.
 	AdvanceSettledState(SettledState)
 
-	// Block builder:
-	// Called at start of a new block
+	// Block builder policy
+	// BeginBlock is called at start of a new block
 	BeginBlock(blockNumber BlockNumber) error
-	// Return whether a local tx is admissible right now.
+	// CanIncludeLocalTx return whether a local tx is admissible right now.
 	CanIncludeLocalTx() (include bool, err error)
-	// SCP start-up hook. Locks local txs from being added (internal logic).
+	// OnStartInstance is an SCP start-up hook. Locks local txs from being added (internal logic).
 	OnStartInstance(id compose.InstanceID) error
-	// SCP decision hook. Unlocks local txs (internal logic).
+	// OnDecidedInstance is an SCP decision hook. Unlocks local txs (internal logic).
 	OnDecidedInstance(id compose.InstanceID) error
-	// End-of-block hook
+	// EndBlock: hook for when block ends
 	EndBlock(b BlockHeader) error
 }
 
@@ -61,8 +62,8 @@ type SequencerState struct {
 	// Head represents the highest sealed block number.
 	Head BlockNumber
 
-	SealedBlocks map[compose.PeriodID]SealedBlockHeader
-	SettledState SettledState
+	SealedBlockHead map[compose.PeriodID]SealedBlockHeader
+	SettledState    SettledState
 }
 
 type sequencer struct {
@@ -86,7 +87,7 @@ func NewSequencer(
 			PendingBlock:           nil,
 			ActiveInstanceID:       nil,
 			Head:                   settledState.BlockHeader.Number,
-			SealedBlocks:           make(map[compose.PeriodID]SealedBlockHeader),
+			SealedBlockHead:        make(map[compose.PeriodID]SealedBlockHeader),
 			SettledState:           settledState,
 		},
 	}
@@ -107,7 +108,7 @@ func (s *sequencer) StartPeriod(
 	// Else, it can be triggered right away.
 	if s.PendingBlock == nil {
 		var header *BlockHeader
-		block, ok := s.SealedBlocks[s.PeriodID-1]
+		block, ok := s.SealedBlockHead[s.PeriodID-1]
 		if ok {
 			header = &block.BlockHeader
 		}
@@ -116,7 +117,7 @@ func (s *sequencer) StartPeriod(
 	return nil
 }
 
-// BeginBlock is a hook called at the start of a new block.
+// BeginBlock is a hook called at the start of a new L2 block.
 func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -183,7 +184,7 @@ func (s *sequencer) EndBlock(b BlockHeader) error {
 		return ErrBlockSealMismatch
 	}
 
-	s.SealedBlocks[s.PendingBlock.PeriodID] = SealedBlockHeader{
+	s.SealedBlockHead[s.PendingBlock.PeriodID] = SealedBlockHeader{
 		BlockHeader:      b,
 		PeriodID:         s.PendingBlock.PeriodID,
 		SuperblockNumber: s.PendingBlock.SuperblockNumber,
@@ -193,7 +194,7 @@ func (s *sequencer) EndBlock(b BlockHeader) error {
 	// therefore it's time to request proofs for it.
 	if s.PendingBlock.PeriodID < s.PeriodID {
 		var header *BlockHeader
-		block, ok := s.SealedBlocks[s.PeriodID-1]
+		block, ok := s.SealedBlockHead[s.PeriodID-1]
 		if ok {
 			header = &block.BlockHeader
 		}
@@ -215,7 +216,8 @@ func (s *sequencer) AdvanceSettledState(settledBlock SettledState) {
 	s.SettledState = settledBlock
 }
 
-// Rollback erases blocks beyond the given superblock number and hash, and returns the safe head block header.
+// Rollback message is sent by the publisher to all sequencers.
+// The sequencer must erase blocks beyond the given superblock number and hash, and return the safe head block header.
 func (s *sequencer) Rollback(
 	superblockNumber compose.SuperblockNumber,
 	superblockHash compose.SuperBlockHash,
@@ -228,11 +230,12 @@ func (s *sequencer) Rollback(
 	}
 
 	// Discard blocks with superblock number greater than the finalized one.
-	for bn, taggedBlock := range s.SealedBlocks {
-		if taggedBlock.SuperblockNumber > s.SettledState.SuperblockNumber {
-			delete(s.SealedBlocks, bn)
+	for blockPeriodID, sealedBlock := range s.SealedBlockHead {
+		if sealedBlock.SuperblockNumber > s.SettledState.SuperblockNumber {
+			delete(s.SealedBlockHead, blockPeriodID)
 		}
 	}
+
 	// Discard current block and active instance
 	s.PendingBlock = nil
 	s.ActiveInstanceID = nil

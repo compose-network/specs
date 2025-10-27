@@ -8,8 +8,6 @@ import (
 	"github.com/compose-network/specs/compose"
 )
 
-type PriorityQueue [][]compose.Transaction
-
 // generateInstanceID returns SHA256(periodID || seq || req[0].Bytes() || ... || req[n].Bytes())
 func generateInstanceID(
 	periodID compose.PeriodID,

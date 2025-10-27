@@ -2,12 +2,16 @@ package scp
 
 import (
 	"errors"
-	"github.com/compose-network/specs/compose"
+	"fmt"
 	"sync"
+
+	"github.com/compose-network/specs/compose"
+	"github.com/rs/zerolog"
 )
 
 var (
-	ErrNoTransactions = errors.New("no transactions to execute")
+	ErrNoTransactions       = errors.New("no transactions to execute")
+	ErrNotInSimulatingState = errors.New("sequencer not in simulating state")
 )
 
 // SequencerState tracks the state machine for a sequencer in an SCP session.
@@ -30,7 +34,12 @@ type SimulationRequest struct {
 // ExecutionEngine represents the execution engine, such as the EVM.
 type ExecutionEngine interface {
 	ChainID() compose.ChainID
-	Simulate(request SimulationRequest) (readRequest *MailboxMessageHeader, err error)
+	// Simulate runs the VM with a tracer for the simulation request.
+	// The simulation returns a list of written mailbox messages (writeMessages).
+	// If there's a read miss, readRequest is populated with the expected header.
+	// If there's a simulation error (not read miss), err is populated.
+	// Else, err is nil and readRequest is nil (successful transaction execution).
+	Simulate(request SimulationRequest) (readRequest *MailboxMessageHeader, writeMessages []MailboxMessage, err error)
 }
 
 type SequencerNetwork interface {
@@ -49,9 +58,9 @@ type SequencerInstance struct {
 	state         SequencerState
 	decisionState compose.DecisionState
 
-	// List of transactions to be executed by this chain.
+	// List of transactions to be executed by this chain (from the request)
 	txs []compose.Transaction
-	// Read requests made by the transactions. Removed on fulfillment.
+	// Read requests made by the transactions (returned by simulations). Removed on fulfillment.
 	expectedReadRequests []MailboxMessageHeader
 	// Incoming mailbox messages that can be used to satisfy expected reads.
 	pendingMessages []MailboxMessage
@@ -60,6 +69,10 @@ type SequencerInstance struct {
 	putInboxMessages []MailboxMessage
 	// Identifies the VM state for the simulation
 	vmSnapshot compose.StateRoot
+
+	writtenMessagesCache []MailboxMessage
+
+	logger zerolog.Logger
 }
 
 func NewSequencerInstance(
@@ -67,6 +80,7 @@ func NewSequencerInstance(
 	execution ExecutionEngine,
 	network SequencerNetwork,
 	vmSnapshot compose.StateRoot,
+	logger zerolog.Logger,
 ) (*SequencerInstance, error) {
 	// Build runner
 	r := &SequencerInstance{
@@ -80,6 +94,8 @@ func NewSequencerInstance(
 		expectedReadRequests: make([]MailboxMessageHeader, 0),
 		pendingMessages:      make([]MailboxMessage, 0),
 		vmSnapshot:           vmSnapshot,
+		writtenMessagesCache: make([]MailboxMessage, 0),
+		logger:               logger,
 	}
 
 	// Filter transactions to this chain
@@ -96,7 +112,13 @@ func NewSequencerInstance(
 	return r, nil
 }
 
-// Run executes calls the mailbox-aware simulation.
+func (r *SequencerInstance) DecisionState() compose.DecisionState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.decisionState
+}
+
+// Run executes calls to the mailbox-aware simulation.
 // If simulation succeeds, it sends Vote(true) to the SP and set state to waiting for decided.
 // If simulation fails due to read miss, it adds the expected read message and looks for new reads to insert.
 // If simulation fails for other reasons, it sends Vote(false) and terminates.
@@ -104,22 +126,29 @@ func (r *SequencerInstance) Run() error {
 	r.mu.Lock()
 	if r.state != SeqStateSimulating {
 		r.mu.Unlock()
-		return errors.New("sequencer is not in simulating state")
+		return ErrNotInSimulatingState
 	}
 
 	// Run simulation
-	readRequest, err := r.execution.Simulate(SimulationRequest{
+	readRequest, writeMessages, err := r.execution.Simulate(SimulationRequest{
 		PutInboxMessages: append([]MailboxMessage(nil), r.putInboxMessages...),
 		Transactions:     append([]compose.Transaction(nil), r.txs...),
 		Snapshot:         r.vmSnapshot,
 	})
 	if err != nil {
+
+		r.logger.Info().Msg("Simulation failed, rejecting instance. Error: " + err.Error())
+
 		r.network.SendVote(false)
 		r.state = SeqStateDone
 		r.decisionState = compose.DecisionStateRejected
 		r.mu.Unlock()
-		return errors.New("unknown simulation failure")
+
+		return fmt.Errorf("simulating sequencer failed: %w", err)
 	}
+
+	// Send write messages
+	r.sendWriteMessages(writeMessages)
 
 	// Consume mailbox messages.
 	if readRequest != nil {
@@ -129,14 +158,35 @@ func (r *SequencerInstance) Run() error {
 	}
 
 	// Vote true.
+	r.logger.Info().Msg("Simulation succeeded, voting true.")
 	r.network.SendVote(true)
 	r.state = SeqStateWaitingDecided
 	r.mu.Unlock()
 	return nil
 }
 
+func (r *SequencerInstance) sendWriteMessages(messages []MailboxMessage) {
+	for _, msg := range messages {
+		// Check if belongs to cache
+		alreadySent := false
+		for _, cachedMsg := range r.writtenMessagesCache {
+			if cachedMsg.Equal(msg) {
+				alreadySent = true
+				break
+			}
+		}
+		if alreadySent {
+			continue
+		}
+
+		// Send if new message
+		r.network.SendMailboxMessage(msg.MailboxMessageHeader.DestChainID, msg)
+		r.writtenMessagesCache = append(r.writtenMessagesCache, msg)
+	}
+}
+
 // consumeReceivedMailboxMessagesAndSimulate checks if any expected read mailbox messages have been received
-// If so, remove from the lists, and call runSimulation
+// If so, remove from the lists, and call run to simulate
 func (r *SequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 	r.mu.Lock()
 	includedAny := false
@@ -171,6 +221,7 @@ func (r *SequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 
 	r.mu.Unlock()
 	if includedAny {
+		r.logger.Info().Msg("Consuming mailbox messages and re-simulating.")
 		return r.Run()
 	}
 	return nil
@@ -180,10 +231,19 @@ func (r *SequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 func (r *SequencerInstance) ProcessMailboxMessage(msg MailboxMessage) error {
 	r.mu.Lock()
 	if r.state != SeqStateSimulating {
-		// TODO log that message is ignored
+		r.logger.Info().
+			Uint64("source_chain_id", uint64(msg.MailboxMessageHeader.SourceChainID)).
+			Str("label", msg.MailboxMessageHeader.Label).
+			Msg("Ignoring mailbox message because not in simulating state")
+
 		r.mu.Unlock()
 		return nil
 	}
+
+	r.logger.Info().
+		Uint64("source_chain_id", uint64(msg.MailboxMessageHeader.SourceChainID)).
+		Str("label", msg.MailboxMessageHeader.Label).
+		Msg("Adding mailbox message to pending list")
 
 	r.pendingMessages = append(r.pendingMessages, msg)
 	r.mu.Unlock()
@@ -195,7 +255,11 @@ func (r *SequencerInstance) ProcessDecidedMessage(decided bool) error {
 	r.mu.Lock()
 
 	if r.state == SeqStateDone {
-		// TODO log that message is ignored as it has already decided
+		r.logger.Info().
+			Bool("received_decided", decided).
+			Str("stored_decision", r.decisionState.String()).
+			Msg("Ignoring decided message because already done")
+
 		r.mu.Unlock()
 		return nil
 	}

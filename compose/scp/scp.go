@@ -1,11 +1,22 @@
 package scp
 
-import "github.com/compose-network/specs/compose"
+import (
+	"bytes"
+
+	"github.com/compose-network/specs/compose"
+)
 
 // MailboxMessage carries the data exchanged between sequencers for mailbox fulfillment.
 type MailboxMessage struct {
 	MailboxMessageHeader
 	Data []byte
+}
+
+func (a MailboxMessage) Equal(b MailboxMessage) bool {
+	if !a.MailboxMessageHeader.Equal(b.MailboxMessageHeader) {
+		return false
+	}
+	return bytes.Equal(a.Data, b.Data)
 }
 
 type MailboxMessageHeader struct {

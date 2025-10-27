@@ -61,3 +61,16 @@ const (
 	DecisionStateAccepted
 	DecisionStateRejected
 )
+
+func (d *DecisionState) String() string {
+	switch *d {
+	case DecisionStatePending:
+		return "Pending"
+	case DecisionStateAccepted:
+		return "Accepted"
+	case DecisionStateRejected:
+		return "Rejected"
+	default:
+		return "Unknown"
+	}
+}

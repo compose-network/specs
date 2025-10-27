@@ -5,11 +5,17 @@ import (
 	"sync"
 
 	"github.com/compose-network/specs/compose"
+
+	"github.com/rs/zerolog"
+)
+
+var (
+	ErrDuplicatedVote = errors.New("duplicated vote")
 )
 
 type PublisherNetwork interface {
-	SendStartInstance(instance compose.Instance, xTRequest []compose.Transaction)
-	SendDecided(decided bool)
+	SendStartInstance(instance compose.Instance)
+	SendDecided(instanceID compose.InstanceID, decided bool)
 }
 
 type PublisherInstance struct {
@@ -24,12 +30,15 @@ type PublisherInstance struct {
 	// Protocol state
 	decisionState compose.DecisionState
 	votes         map[compose.ChainID]bool
+
+	logger zerolog.Logger
 }
 
 func NewPublisherInstance(
 	instance compose.Instance,
 	network PublisherNetwork,
-	xTRequest []compose.Transaction) (*PublisherInstance, error) {
+	logger zerolog.Logger,
+) (*PublisherInstance, error) {
 
 	// Build runner
 	r := &PublisherInstance{
@@ -39,6 +48,7 @@ func NewPublisherInstance(
 		chains:        instance.Chains(),
 		decisionState: compose.DecisionStatePending,
 		votes:         make(map[compose.ChainID]bool),
+		logger:        logger,
 	}
 
 	return r, nil
@@ -47,7 +57,7 @@ func NewPublisherInstance(
 // Run performs the initial side-effect to start the instance with participants.
 // Call this once after creation.
 func (r *PublisherInstance) Run() {
-	r.network.SendStartInstance(r.instance, r.instance.XTRequest)
+	r.network.SendStartInstance(r.instance)
 }
 
 func (r *PublisherInstance) ProcessVote(sender compose.ChainID, vote bool) error {
@@ -55,27 +65,39 @@ func (r *PublisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 	defer r.mu.Unlock()
 
 	if r.decisionState != compose.DecisionStatePending {
-		// TODO log ignoring vote because already decided
+		r.logger.Info().
+			Uint64("chain_id", uint64(sender)).
+			Bool("vote", vote).
+			Msg("Ignoring vote because already decided")
 		return nil
 	}
 
 	if _, exists := r.votes[sender]; exists {
-		return errors.New("Received duplicate vote")
+		r.logger.Info().
+			Uint64("chain_id", uint64(sender)).
+			Bool("vote", vote).
+			Msg("Ignoring duplicated vote")
+		return ErrDuplicatedVote
 	}
 
 	r.votes[sender] = vote
 
 	// If any vote is false, decide false immediately
 	if vote == false {
+		r.logger.Info().
+			Uint64("chain_id", uint64(sender)).
+			Msg("Received reject vote, rejecting instance")
 		r.decisionState = compose.DecisionStateRejected
-		r.network.SendDecided(false)
+		r.network.SendDecided(r.instance.ID, false)
 		return nil
 	}
 
 	// Check if all votes are in
 	if len(r.votes) == len(r.chains) {
+		r.logger.Info().
+			Msg("All votes received, accepting instance")
 		r.decisionState = compose.DecisionStateAccepted
-		r.network.SendDecided(true)
+		r.network.SendDecided(r.instance.ID, true)
 		return nil
 	}
 
@@ -87,10 +109,14 @@ func (r *PublisherInstance) Timeout() error {
 	defer r.mu.Unlock()
 
 	if r.decisionState != compose.DecisionStatePending {
-		// TODO log ignoring timeout because already decided
+		r.logger.Info().
+			Msg("Ignoring timeout because already decided")
 		return nil
 	}
+
+	r.logger.Info().
+		Msg("Instance timed out, rejecting")
 	r.decisionState = compose.DecisionStateRejected
-	r.network.SendDecided(false)
+	r.network.SendDecided(r.instance.ID, false)
 	return nil
 }
