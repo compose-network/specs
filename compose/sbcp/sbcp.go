@@ -2,9 +2,9 @@ package sbcp
 
 import (
 	"bytes"
-	"compose"
 	"crypto/sha256"
 	"encoding/binary"
+	"github.com/compose-network/specs/compose"
 )
 
 type PriorityQueue [][]compose.Transaction

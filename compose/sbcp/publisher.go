@@ -1,9 +1,9 @@
 package sbcp
 
 import (
-	"compose"
 	"errors"
 	"fmt"
+	"github.com/compose-network/specs/compose"
 	"sync"
 )
 

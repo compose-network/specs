@@ -1,6 +1,6 @@
 package scp
 
-import "compose"
+import "github.com/compose-network/specs/compose"
 
 // MailboxMessage carries the data exchanged between sequencers for mailbox fulfillment.
 type MailboxMessage struct {

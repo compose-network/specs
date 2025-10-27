@@ -1,7 +1,7 @@
 package sbcp
 
 import (
-	"compose"
+	"github.com/compose-network/specs/compose"
 )
 
 // fakeChainTx is a minimal compose.Transaction for SBCP tests.

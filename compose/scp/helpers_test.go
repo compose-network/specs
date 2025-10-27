@@ -1,7 +1,7 @@
 package scp
 
 import (
-	"compose"
+	"github.com/compose-network/specs/compose"
 )
 
 // fakeTx is a minimal Transaction implementation for tests.

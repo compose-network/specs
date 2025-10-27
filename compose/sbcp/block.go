@@ -1,6 +1,6 @@
 package sbcp
 
-import "compose"
+import "github.com/compose-network/specs/compose"
 
 type BlockNumber uint64
 

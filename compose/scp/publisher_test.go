@@ -1,7 +1,7 @@
 package scp
 
 import (
-	"compose"
+	"github.com/compose-network/specs/compose"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
