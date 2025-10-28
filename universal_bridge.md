@@ -450,23 +450,39 @@ function receiveTokens(
 
 We need to utilize the current OP-contracts with minimal changes. Namely the `StandardBridge.sol`, `CrossDomainMessenger.sol`. 
 
-Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy its portal that will use a shared `ETHLockBox` and an `ERC20LockBox`. The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
+Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy its portal that will use a shared `ETHLockBox` and an `ERC20LockBox`. The `ERC20 The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
+
+The `finalizeBridgeERC20` and `initiateBridgeERC20` calls in the birdge must be change so they will work with `ComposableERC20s`.
 
 The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
 
 
-## TODO: Can we do L1<->L2 bridge for external rollups
-
-### ETH
-Not w.o having liquidity available on the external rollup.
-
-### ERC-20
+## L1<->L2 bridge for External rollups
 
 Currently Op-Succinct Sequencers pick up `TransactionDeposited` Events to relay bridge messages.
 They check the address of the contract that originated the event. And perform a ZK proof that the event was included in the `recieptsRoot`.
 
-In the case of an external interop sequencer, a malicious wrapped sequencer may send a non backed log. This won't be ZK proven but it will still become part of the external rollup canonical state. 
-The result will be that the connection with the Universal Shared Bridge will be severed.
+In the case of an external rollup, a malicious wrapped sequencer may send a non backed log. This won't be ZK proven but it will still become part of the external rollup canonical state. 
+The result will be that the connection with the Universal Shared Bridge will be severed. The remedy for this is to have our bridge re-utilize the rollup's canonical `CrossDomainSequencer` and `OptimismPortal`
 
 
+### ERC-20
 
+#### Deposits
+
+One needs to create `L1ComposeBridge.sol` that will live along side the canonical `L1StandardBridge.sol`. It will use the canonical `L1CrossDomainMessenger`. For deposits of ERC20 use the same `initiateBridgeERC20` function as for native rollups. The `otherBridge` parameter should now point to the new `L2ComposeBridgeERC20.sol`. On the receiving side on `L2ComposeBridgeERC20.sol`, the `finalizeBridgeERC20.sol` mints the wrapped `ComposeableERC20` tokens. Using the `onlyOtherBridge` modifier while embracing the canonical `L2CrossDomainMessenger` ensures security.
+
+
+#### Withdrawals
+
+One must create a new `ComposePortal` (based on `OptimismPortal`) that has only the Withdrawal logic. It will wire in the [`OPSuccinctDisputeGame.sol`](https://github.com/succinctlabs/op-succinct/blob/ce454dd2f16c203437c9615680b0dc76b2a1b827/contracts/src/validity/OPSuccinctDisputeGame.sol) for its verification process. It will utilize the canonical `L1CrossDomainMessenger` send funds to `L1ComposeBridge#finalizeBridgeERC20`, gaining security via `onlyOtherBridgeModifier`. 
+
+On the L2 side, the `L2ComposeBridge` via `initiateWithdrawal` and `bridgeERC20` will go again through the canonical `L2CrossDomainMessenger`. The target of the message, set by `initiateBridgeERC20` should be set to the `L1ComposeBridge` address. 
+
+
+We should note `ComposePortal` should hold an `ERC20Lockbox` to support shared liquidity.
+
+
+### ETH
+
+Similar to ERC-20, but should *always* be converted to **or** from `ComposeableERC20` when bridged.
