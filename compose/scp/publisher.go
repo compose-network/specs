@@ -13,12 +13,20 @@ var (
 	ErrDuplicatedVote = errors.New("duplicated vote")
 )
 
+type PublisherInstance interface {
+	Instance() compose.Instance
+	DecisionState() compose.DecisionState
+	Run()
+	ProcessVote(sender compose.ChainID, vote bool) error
+	Timeout() error
+}
+
 type PublisherNetwork interface {
 	SendStartInstance(instance compose.Instance)
 	SendDecided(instanceID compose.InstanceID, decided bool)
 }
 
-type PublisherInstance struct {
+type publisherInstance struct {
 	mu sync.Mutex
 
 	// Dependencies
@@ -38,10 +46,10 @@ func NewPublisherInstance(
 	instance compose.Instance,
 	network PublisherNetwork,
 	logger zerolog.Logger,
-) (*PublisherInstance, error) {
+) (PublisherInstance, error) {
 
 	// Build runner
-	r := &PublisherInstance{
+	r := &publisherInstance{
 		mu:            sync.Mutex{},
 		network:       network,
 		instance:      instance,
@@ -54,13 +62,25 @@ func NewPublisherInstance(
 	return r, nil
 }
 
+func (r *publisherInstance) DecisionState() compose.DecisionState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.decisionState
+}
+
+func (r *publisherInstance) Instance() compose.Instance {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.instance
+}
+
 // Run performs launches the instance by sending a message to all participants.
 // Call this once after creation.
-func (r *PublisherInstance) Run() {
+func (r *publisherInstance) Run() {
 	r.network.SendStartInstance(r.instance)
 }
 
-func (r *PublisherInstance) ProcessVote(sender compose.ChainID, vote bool) error {
+func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -104,7 +124,7 @@ func (r *PublisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 	return nil
 }
 
-func (r *PublisherInstance) Timeout() error {
+func (r *publisherInstance) Timeout() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
