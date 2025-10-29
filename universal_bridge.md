@@ -29,7 +29,7 @@ ___
 -  **ComposableERC20**
     An ERC20 wrapper native to the bridge.
 
--   **Bridge (per L2)**
+-   **ComposeL2ToL2Bridge (per L2)**
     Handles: locking native ERC-20, burning CET, mailbox write/read, and
     minting (via token's `onlyBridge` gate when called from the bridge
     context).
@@ -272,6 +272,18 @@ function bridgeCETTo(
     address receiver,          // address on destination L2
     uint256 sessionId
 ) external;
+
+
+
+/// @notice Lock native ETH on source and send SEND message
+/// @param sessionId Used for mailbox session tracking
+/// @param chainDest The target ChainID for bridging ETH
+/// @param receiver The recipient address on the destination L2
+function bridgeEthTo(
+    uint256 sessionID
+    uint256 chainDest
+    address receiver,
+) external payable
 ```
 
 ### Destination L2: recipient claim
@@ -283,6 +295,15 @@ function bridgeCETTo(
 function receiveTokens(
     MessageHeader msgHeader
 ) external returns (address token, uint256 amount);
+
+
+/// @notice Process ETH reception on destination chain
+/// @dev Only the intended receiver can call this to claim bridged ETH.
+/// @param msgHeader the identifier used to locate the message
+/// @return amount Amount of ETH transferred
+function receiveETH(
+    MessageHeader msgHeader
+) external returns (uint256 amount)
 ```
 
 > Note: receiveTokens` sits **on the Bridge contract**
@@ -296,20 +317,14 @@ function receiveTokens(
 ### Events
 
 ``` solidity
-event TokensSendQueued(
-    uint256 indexed chainDest,
-    address indexed sender,
-    address indexed receiver,
-    address remoteAsset,
-    uint256 amount,
-    uint256 sessionId,
-    bytes32 messageId
-);
-
 event TokensLocked(address indexed token, address indexed sender, uint256 amount);
 event CETBurned(address indexed token, address indexed sender, uint256 amount);
 event MailboxWrite(uint256 indexed chainId, address indexed account, uint256 indexed sessionId, string label);
+event TokensBridged(uint256 indexed chainDest, address indexed sender, address indexed receiver, address remoteAsset, uint256 amount, uint256 sessionId, bytes32 messageId);
 event TokensReceived(address indexed token, uint256 amount);
+event ETHLocked(address indexed sender, uint256 amount);
+event ETHBridged(uint256 indexed chainDest, address indexed sender, address indexed receiver, uint256 amount, uint256 sessionId, bytes32 messageId);
+event ETHReceived(address indexed sender, uint256 amount);
 event MailboxAckWrite(uint256 indexed chainId, address indexed account, uint256 indexed sessionId, string label);
 event AddToAllowList(address indexed allowedCaller)
 event RemoveFromAllowList(address indexed c aller)
@@ -336,14 +351,14 @@ function bridgeERC20To(
 
     bytes memory payload = abi.encode(block.chainid, tokenSrc, amount);
 
-    mailbox.write(chainDest, receiver, sessionId, "SEND", payload);
+    mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
     // performs a mailbox read for an "ACK" labeled message.
     checkAck(chainDest, sessionID)
 
-    emit MailboxWrite(chainDest, receiver, sessionId, "SEND");
+    emit MailboxWrite(chainDest, receiver, sessionId, "SEND_TOKEN");
 
-    bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND"));
-    emit TokensSendQueued(chainDest, sender, receiver, tokenSrc, amount, sessionId, messageId);
+    bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND_TOKEN"));
+    emit TokensBridged(chainDest, sender, receiver, tokenSrc, amount, sessionId, messageId);
 }
 ```
 
@@ -368,13 +383,13 @@ function bridgeCETTo(
 
     bytes memory payload = abi.encode(remoteChainID, remoteAsset, amount);
 
-    mailbox.write(chainDest, receiver, sessionId, "SEND", payload);
+    mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
     checkAck(chainDest, sessionID)
 
-    emit MailboxWrite(chainDest, receiver, sessionId, "SEND");
+    emit MailboxWrite(chainDest, receiver, sessionId, "SEND_TOKEN");
 
-    bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND"));
-    emit TokensSendQueued(chainDest, sender, receiver, cetTokenSrc, amount, sessionId, messageId);
+    bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND_TOKEN"));
+    emit TokensBridged(chainDest, sender, receiver, cetTokenSrc, amount, sessionId, messageId);
 }
 ```
 
@@ -392,11 +407,11 @@ function receiveTokens(
 ) external returns (address token, uint256 amount) {
     require(msg.sender == msgHeader.receiver, "Only receiver can claim");
     require(msgHeader.chainDest == block.chainid, "Wrong destination chain");
-    require(msgHeader.label == "SEND", "Must read a SEND message")
+    require(msgHeader.label == "SEND_TOKEN", "Must read a SEND_TOKEN message")
 
     // 1) Read and consume the SEND message
-    bytes memory m = mailbox.read(MessageHeader(sessionIDchainSrc, receiver, sessionId, "SEND");
-    if (m.length == 0) revert("No SEND message");
+    bytes memory m = mailbox.read(MessageHeader(sessionIDchainSrc, receiver, sessionId, "SEND_TOKEN");
+    if (m.length == 0) revert("No SEND_TOKEN message");
 
     uint256 rmoteChainID;
     address remoteAsset;
@@ -416,12 +431,93 @@ function receiveTokens(
     }
 
     // 3) ACK back to source
-    mailbox.write(chainSrc, sender, sessionId, "ACK SEND", abi.encode({}));
+    mailbox.write(chainSrc, sender, sessionId, "ACK", abi.encode({}));
 
     emit TokensReceived(token, amount);
     return (token, amount);
 }
 ```
+
+
+----
+
+### ETH transfers
+
+Use [ETHLiquidity](https://specs.optimism.io/interop/eth-liquidity.html) with the `ComposeL2toL2Bridge`. `Mint` and `Burn` calls will simply insert and release liquidity from the pool.
+
+```solidity
+function bridgeEthTo(
+    uint256 sessionID
+    uint256 chainDest
+    address receiver,
+) external payable {
+    require(msg.value > 0, "No ETH sent");
+    // Precharge ETHLiquidity pool (escrow ETH)
+    ETHLiquidity.lock{value: msg.value}(msg.sender);
+    emit ETHLocked(msg.sender, msg.value);
+
+    // Write SEND_ETH message to mailbox for destination chain
+    // Message format: (uint256 remoteChainID, uint256 amount)
+    bytes memory payload = abi.encode(block.chainid, msg.value);
+    mailbox.write(
+        chainDest,
+        to,
+        sessionId,
+        "SEND_ETH",
+        payload
+    );
+
+    checkAck(chainDest, sessionID)
+    emit ETHBridged(chainID, msg.sender, to, msg.value, sessionId, keccak256(abi.encodePacked(chainID, to, sessionId, "SEND_ETH")));
+}
+
+/// @notice Process ETH reception on destination chain
+/// @dev Only the intended receiver can call this to claim bridged ETH.
+/// @param msgHeader the identifier used to locate the message
+/// @return amount Amount of ETH transferred
+function receiveETH(
+    MessageHeader msgHeader
+) external returns (uint256 amount) {
+    require(msg.sender == msgHeader.receiver, "Only receiver can claim");
+    require(msgHeader.chainDest == block.chainid, "Wrong destination chain");
+    require(msgHeader.label == "SEND_ETH", "Must read a SEND_ETH message");
+
+    // Read and consume SEND_ETH message from mailbox
+    bytes memory m = mailbox.read(
+        MessageHeader(
+            msgHeader.chainSrc,
+            msgHeader.receiver,
+            msgHeader.sessionId,
+            "SEND_ETH"
+        )
+    );
+    if (m.length == 0) revert("No SEND_ETH message");
+
+    uint256 remoteChainID;
+    uint256 ethAmount;
+    (remoteChainID, ethAmount) = abi.decode(m, (uint256, uint256));
+    amount = ethAmount;
+
+    // Release ETH from the ETHLiquidity pool to the receiver
+    ETHLiquidity.withdraw(msg.sender, amount);
+
+    // Write ACK back to the source
+    mailbox.write(
+        msgHeader.chainSrc,
+        msgHeader.receiver,
+        msgHeader.sessionId,
+        "ACK",
+        abi.encode({})
+    );
+
+    emit ETHReceived(msg.sender, amount);
+    emit MailboxAckWrite(msgHeader.chainSrc, msgHeader.receiver, msgHeader.sessionId, "ACK");
+    return amount;
+}
+```
+
+
+
 
 ------------------------------------------------------------------------
 
@@ -438,10 +534,10 @@ function receiveTokens(
 ###  End-to-End L2<->L2 Lifecycle
 
 1.  Sender calls `bridgeERC20To` or `bridgeCETTo` with sessionId.
-2.  Source bridge locks/burns + writes `"SEND"` with L1 asset address.
+2.  Source bridge locks/burns + writes `"SEND_TOKENS"` with L1 asset address.
 3.  Receiver calls `receiveTokens`.
-4.  Destination bridge reads `"SEND"`, computes CET address from
-    `remoteAsset`, mints, writes `"ACK SEND"`
+4.  Destination bridge reads `"SEND_TOKENS"`, computes CET address from
+    `remoteAsset`, mints, writes `"ACK"`
 5.  ACK is visible for source monitoring.
 
 ------------------------------------------------------------------------
