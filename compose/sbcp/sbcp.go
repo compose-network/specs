@@ -8,8 +8,8 @@ import (
 	"github.com/compose-network/specs/compose"
 )
 
-// generateInstanceID returns SHA256(periodID || seq || req[0].Bytes() || ... || req[n].Bytes())
-func generateInstanceID(
+// GenerateInstanceID returns SHA256(periodID || seq || req[0].Bytes() || ... || req[n].Bytes())
+func GenerateInstanceID(
 	periodID compose.PeriodID,
 	seq compose.SequenceNumber,
 	req []compose.Transaction,

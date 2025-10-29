@@ -155,7 +155,7 @@ func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instan
 	// Create instance
 	p.SequenceNumber++
 	instance := compose.Instance{
-		ID: generateInstanceID(
+		ID: GenerateInstanceID(
 			p.PeriodID,
 			p.SequenceNumber,
 			request,

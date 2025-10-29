@@ -16,16 +16,16 @@ func TestGenerateInstanceID_stability_and_sensitivity(t *testing.T) {
 		fakeChainTx{chain: 1, body: []byte{0x01, 0x02}},
 		fakeChainTx{chain: 2, body: []byte{0x03}},
 	}
-	idA := generateInstanceID(10, 1, req1)
-	idA2 := generateInstanceID(10, 1, req1Copy)
+	idA := GenerateInstanceID(10, 1, req1)
+	idA2 := GenerateInstanceID(10, 1, req1Copy)
 	assert.Equal(t, idA, idA2, "same inputs must yield same ID")
 
 	// Period change
-	idB := generateInstanceID(11, 1, req1)
+	idB := GenerateInstanceID(11, 1, req1)
 	assert.NotEqual(t, idA, idB)
 
 	// Sequence change
-	idC := generateInstanceID(10, 2, req1)
+	idC := GenerateInstanceID(10, 2, req1)
 	assert.NotEqual(t, idA, idC)
 
 	// Tx bytes change (single byte)
@@ -33,7 +33,7 @@ func TestGenerateInstanceID_stability_and_sensitivity(t *testing.T) {
 		fakeChainTx{chain: 1, body: []byte{0x01, 0x02}},
 		fakeChainTx{chain: 2, body: []byte{0xFF}},
 	}
-	idD := generateInstanceID(10, 1, reqMut)
+	idD := GenerateInstanceID(10, 1, reqMut)
 	assert.NotEqual(t, idA, idD)
 
 	// Order matters
@@ -41,7 +41,7 @@ func TestGenerateInstanceID_stability_and_sensitivity(t *testing.T) {
 		fakeChainTx{chain: 2, body: []byte{0x03}},
 		fakeChainTx{chain: 1, body: []byte{0x01, 0x02}},
 	}
-	idE := generateInstanceID(10, 1, reqReordered)
+	idE := GenerateInstanceID(10, 1, reqReordered)
 	assert.NotEqual(t, idA, idE)
 
 	// Empty tx bytes ignored vs omitted
@@ -52,7 +52,7 @@ func TestGenerateInstanceID_stability_and_sensitivity(t *testing.T) {
 	reqOmit := []compose.Transaction{
 		fakeChainTx{chain: 1, body: []byte{0x01, 0x02}},
 	}
-	idF := generateInstanceID(10, 3, reqWithEmpty)
-	idG := generateInstanceID(10, 3, reqOmit)
+	idF := GenerateInstanceID(10, 3, reqWithEmpty)
+	idG := GenerateInstanceID(10, 3, reqOmit)
 	assert.Equal(t, idF, idG, "empty tx bytes are ignored in ID")
 }
