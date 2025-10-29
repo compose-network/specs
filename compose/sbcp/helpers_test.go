@@ -21,6 +21,7 @@ type fakeMessenger struct {
 	}
 	startInstances []compose.Instance
 	rollbacks      []struct {
+		P compose.PeriodID
 		S compose.SuperblockNumber
 		H compose.SuperBlockHash
 	}
@@ -37,11 +38,12 @@ func (m *fakeMessenger) BroadcastStartInstance(inst compose.Instance) {
 	m.startInstances = append(m.startInstances, inst)
 }
 
-func (m *fakeMessenger) BroadcastRollback(s compose.SuperblockNumber, h compose.SuperBlockHash) {
+func (m *fakeMessenger) BroadcastRollback(p compose.PeriodID, s compose.SuperblockNumber, h compose.SuperBlockHash) {
 	m.rollbacks = append(m.rollbacks, struct {
+		P compose.PeriodID
 		S compose.SuperblockNumber
 		H compose.SuperBlockHash
-	}{s, h})
+	}{p, s, h})
 }
 
 // fakeProver records settlement requests for assertions.

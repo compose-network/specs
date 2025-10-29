@@ -206,6 +206,7 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 	// Expect a rollback broadcast to last finalized and target reset to F+1
 	require.Len(t, m.rollbacks, 1)
 	rb := m.rollbacks[0]
+	assert.Equal(t, compose.PeriodID(3), rb.P)
 	assert.Equal(t, finalized, rb.S)
 	assert.Equal(t, compose.SuperBlockHash{7}, rb.H)
 }

@@ -37,6 +37,7 @@ type Publisher interface {
 type Messenger interface {
 	BroadcastStartPeriod(periodID compose.PeriodID, targetSuperblockNumber compose.SuperblockNumber)
 	BroadcastRollback(
+		periodID compose.PeriodID,
 		superblockNumber compose.SuperblockNumber,
 		superblockHash compose.SuperBlockHash,
 	)
@@ -238,7 +239,7 @@ func (p *publisher) ProofTimeout() {
 	p.ActiveChains = make(map[compose.ChainID]bool)
 	p.SequenceNumber = 0
 	p.TargetSuperblockNumber = p.LastFinalizedSuperblockNumber + 1
-	p.messenger.BroadcastRollback(p.LastFinalizedSuperblockNumber, p.LastFinalizedSuperblockHash)
+	p.messenger.BroadcastRollback(p.PeriodID, p.LastFinalizedSuperblockNumber, p.LastFinalizedSuperblockHash)
 }
 
 // Util functions
