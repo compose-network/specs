@@ -470,19 +470,81 @@ The result will be that the connection with the Universal Shared Bridge will be 
 
 #### Deposits
 
-One needs to create `L1ComposeBridge.sol` that will live along side the canonical `L1StandardBridge.sol`. It will use the canonical `L1CrossDomainMessenger`. For deposits of ERC20 use the same `initiateBridgeERC20` function as for native rollups. The `otherBridge` parameter should now point to the new `L2ComposeBridgeERC20.sol`. On the receiving side on `L2ComposeBridgeERC20.sol`, the `finalizeBridgeERC20.sol` mints the wrapped `ComposeableERC20` tokens. Using the `onlyOtherBridge` modifier while embracing the canonical `L2CrossDomainMessenger` ensures security.
+One needs to create `L1ComposeBridge.sol` that will live alongside the canonical `L1StandardBridge.sol`. It will use the canonical `L1CrossDomainMessenger`. For deposits of ERC20, use the same `initiateBridgeERC20` function as for native rollups. The `otherBridge` parameter should now point to the new `L2ComposeBridgeERC20.sol`. On the receiving side, within `L2ComposeBridgeERC20.sol`, the `finalizeBridgeERC20` function mints the wrapped `ComposeableERC20` tokens. Security is ensured by using the `onlyOtherBridge` modifier, together with the canonical `L2CrossDomainMessenger`.
+
+```mermaid
+flowchart TD
+    User[User]
+    L1CB[L1ComposeBridge]:::compose
+    L1XDM[L1CrossDomainMessenger]
+    L2XDM[L2CrossDomainMessenger]
+    L2CB[L2ComposeBridgeERC20]:::compose
+    User -->|initiateBridgeERC20| L1CB
+    L1CB -->|sendMessage| L1XDM
+    L1XDM -->|depositTransaction| OptimismPortal
+    OptimismPortal -->|TxDeposited event| op-node
+    op-node -->|deposit| op-geth
+    op-geth -->|relayMessage| L2XDM
+    L2XDM -->|finalizeBridgeERC20| L2CB
+    L2CB -->|mint ComposeableERC20| User
+
+    classDef compose fill:#ffd580,stroke:#b17600,stroke-width:2px;
+```
+
+**Key message flow:**
+- User triggers deposit on `L1ComposeBridge`
+- Message is sent through the canonical `L1CrossDomainMessenger`
+- Message forwarded it to `OptimismPortal` that creates a `TxDeposited` event observed by `op-node`.
+- Via a deposit transaction, message is received on L2 by `L2ComposeBridgeERC20` via the canonical `L2CrossDomainMessenger`
+- `L2ComposeBridgeERC20` mints the wrapped tokens using `finalizeBridgeERC20`
+- Security is enforced via `onlyOtherBridge` and the canonical messenger addresses
+
+*Note: The Compose bridges (`L1ComposeBridge`, `L2ComposeBridgeERC20`) are the components that differ from the canonical flow.*
+
+
 
 
 #### Withdrawals
 
-One must create a new `ComposePortal` (based on `OptimismPortal`) that has only the Withdrawal logic. It will wire in the [`OPSuccinctDisputeGame.sol`](https://github.com/succinctlabs/op-succinct/blob/ce454dd2f16c203437c9615680b0dc76b2a1b827/contracts/src/validity/OPSuccinctDisputeGame.sol) for its verification process. It will utilize the canonical `L1CrossDomainMessenger` send funds to `L1ComposeBridge#finalizeBridgeERC20`, gaining security via `onlyOtherBridgeModifier`. 
+One must create a new `ComposePortal` (based on `OptimismPortal`) that has only the Withdrawal logic. It will wire in the [`OPSuccinctDisputeGame.sol`](https://github.com/succinctlabs/op-succinct/blob/ce454dd2f16c203437c9615680b0dc76b2a1b827/contracts/src/validity/OPSuccinctDisputeGame.sol) for its verification process. It will utilize the canonical `L1CrossDomainMessenger` to send funds to `L1ComposeBridge#finalizeBridgeERC20`, gaining security via `onlyOtherBridgeModifier`. 
 
-On the L2 side, the `L2ComposeBridge` via `initiateWithdrawal` and `bridgeERC20` will go again through the canonical `L2CrossDomainMessenger`. The target of the message, set by `initiateBridgeERC20` should be set to the `L1ComposeBridge` address. 
-
+On the L2 side, the `L2ComposeBridge` via `initiateWithdrawal` and `bridgeERC20` will again send its message through the canonical `L2CrossDomainMessenger`. The target of the message, set by `initiateBridgeERC20`, should be the `L1ComposeBridge` address. 
 
 We should note `ComposePortal` should hold an `ERC20Lockbox` to support shared liquidity.
+
+```mermaid
+flowchart TD
+    User[User initiates withdraw on L2ComposeBridge]
+    L2CB[L2ComposeBridge]:::compose
+    L2XDM[L2CrossDomainMessenger]
+    ComposePortal[ComposePortal]:::compose
+    OutputOracle[L2 OutputOracle]
+    DisputeGame[OPSuccinctDisputeGame]
+    L1XDM[L1CrossDomainMessenger]
+    L1CB[L1ComposeBridge]:::compose
+
+    User -->|initiateWithdrawal / bridgeERC20| L2CB
+    L2CB -->|sendMessage| L2XDM
+    L2XDM -->|initiate withdrawal process| ComposePortal
+    OutputOracle -->|feeds state root & proof| DisputeGame
+    ComposePortal -->|prove withdrawal via DisputeGame| DisputeGame
+    DisputeGame -->|withdrawal proven| ComposePortal
+    ComposePortal -->|sendMessage| L1XDM
+    L1XDM -->|finalizeBridgeERC20| L1CB
+
+    classDef compose fill:#ffd580,stroke:#b17600,stroke-width:2px;
+```
+
+**Key message flow:**
+- User triggers a withdrawal via `L2ComposeBridge`.
+- The canonical `L2CrossDomainMessenger` transmits the withdrawal message to the `ComposePortal`.
+- `ComposePortal` leverages `OPSuccinctDisputeGame` for validity proof and holds funds in `ERC20Lockbox`.
+- Upon successful proof, `ComposePortal` sends a message through the canonical `L1CrossDomainMessenger` to `L1ComposeBridge`.
+- `L1ComposeBridge#finalizeBridgeERC20` completes the withdrawal, releasing funds to the user.
+- Security relies on `onlyOtherBridge` and proof verification via the dispute game.
+
 
 
 ### ETH
 
-Similar to ERC-20, but should *always* be converted to **or** from `ComposeableERC20` when bridged.
+Similar to ERC-20, but should *always* be used with a `ComposeableERC20` conversion when bridged from either direction.
