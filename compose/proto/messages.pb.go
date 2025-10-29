@@ -247,17 +247,70 @@ func (x *Pong) GetTimestamp() int64 {
 	return 0
 }
 
-// Cross-chain transaction request
+// TransactionRequest represents a request of multiple transactions for a specific chain
+type TransactionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChainId       []byte                 `protobuf:"bytes,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	Transaction   [][]byte               `protobuf:"bytes,2,rep,name=transaction,proto3" json:"transaction,omitempty"` // RLP encoded Ethereum transactions
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransactionRequest) Reset() {
+	*x = TransactionRequest{}
+	mi := &file_messages_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransactionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransactionRequest) ProtoMessage() {}
+
+func (x *TransactionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransactionRequest.ProtoReflect.Descriptor instead.
+func (*TransactionRequest) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *TransactionRequest) GetChainId() []byte {
+	if x != nil {
+		return x.ChainId
+	}
+	return nil
+}
+
+func (x *TransactionRequest) GetTransaction() [][]byte {
+	if x != nil {
+		return x.Transaction
+	}
+	return nil
+}
+
+// Cross-chain transaction request with multiple requests (one per chain)
 type XTRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Transactions  [][]byte               `protobuf:"bytes,1,rep,name=transactions,proto3" json:"transactions,omitempty"` // List of RLP encoded Ethereum transactions
+	Transactions  []*TransactionRequest  `protobuf:"bytes,1,rep,name=transactions,proto3" json:"transactions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *XTRequest) Reset() {
 	*x = XTRequest{}
-	mi := &file_messages_proto_msgTypes[4]
+	mi := &file_messages_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -269,7 +322,7 @@ func (x *XTRequest) String() string {
 func (*XTRequest) ProtoMessage() {}
 
 func (x *XTRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[4]
+	mi := &file_messages_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -282,10 +335,10 @@ func (x *XTRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XTRequest.ProtoReflect.Descriptor instead.
 func (*XTRequest) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{4}
+	return file_messages_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *XTRequest) GetTransactions() [][]byte {
+func (x *XTRequest) GetTransactions() []*TransactionRequest {
 	if x != nil {
 		return x.Transactions
 	}
@@ -295,16 +348,17 @@ func (x *XTRequest) GetTransactions() [][]byte {
 // Message to start cross-chain transaction coordination
 type StartInstance struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	PeriodId       uint64                 `protobuf:"varint,1,opt,name=period_id,json=periodId,proto3" json:"period_id,omitempty"`                   // Current period ID
-	SequenceNumber uint64                 `protobuf:"varint,2,opt,name=sequence_number,json=sequenceNumber,proto3" json:"sequence_number,omitempty"` // Sequence number for ordering within the period
-	XtRequest      *XTRequest             `protobuf:"bytes,3,opt,name=xt_request,json=xtRequest,proto3" json:"xt_request,omitempty"`                 // The cross-chain transaction request
+	InstanceId     []byte                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`              // Unique instance ID
+	PeriodId       uint64                 `protobuf:"varint,2,opt,name=period_id,json=periodId,proto3" json:"period_id,omitempty"`                   // Current period ID
+	SequenceNumber uint64                 `protobuf:"varint,3,opt,name=sequence_number,json=sequenceNumber,proto3" json:"sequence_number,omitempty"` // Sequence number for ordering within the period
+	XtRequest      *XTRequest             `protobuf:"bytes,4,opt,name=xt_request,json=xtRequest,proto3" json:"xt_request,omitempty"`                 // The cross-chain transaction request
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *StartInstance) Reset() {
 	*x = StartInstance{}
-	mi := &file_messages_proto_msgTypes[5]
+	mi := &file_messages_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -316,7 +370,7 @@ func (x *StartInstance) String() string {
 func (*StartInstance) ProtoMessage() {}
 
 func (x *StartInstance) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[5]
+	mi := &file_messages_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -329,7 +383,14 @@ func (x *StartInstance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartInstance.ProtoReflect.Descriptor instead.
 func (*StartInstance) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{5}
+	return file_messages_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *StartInstance) GetInstanceId() []byte {
+	if x != nil {
+		return x.InstanceId
+	}
+	return nil
 }
 
 func (x *StartInstance) GetPeriodId() uint64 {
@@ -365,7 +426,7 @@ type Vote struct {
 
 func (x *Vote) Reset() {
 	*x = Vote{}
-	mi := &file_messages_proto_msgTypes[6]
+	mi := &file_messages_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -377,7 +438,7 @@ func (x *Vote) String() string {
 func (*Vote) ProtoMessage() {}
 
 func (x *Vote) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[6]
+	mi := &file_messages_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -390,7 +451,7 @@ func (x *Vote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vote.ProtoReflect.Descriptor instead.
 func (*Vote) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{6}
+	return file_messages_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Vote) GetInstanceId() []byte {
@@ -425,7 +486,7 @@ type Decided struct {
 
 func (x *Decided) Reset() {
 	*x = Decided{}
-	mi := &file_messages_proto_msgTypes[7]
+	mi := &file_messages_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -437,7 +498,7 @@ func (x *Decided) String() string {
 func (*Decided) ProtoMessage() {}
 
 func (x *Decided) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[7]
+	mi := &file_messages_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -450,7 +511,7 @@ func (x *Decided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Decided.ProtoReflect.Descriptor instead.
 func (*Decided) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{7}
+	return file_messages_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Decided) GetInstanceId() []byte {
@@ -484,7 +545,7 @@ type MailboxMessage struct {
 
 func (x *MailboxMessage) Reset() {
 	*x = MailboxMessage{}
-	mi := &file_messages_proto_msgTypes[8]
+	mi := &file_messages_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -496,7 +557,7 @@ func (x *MailboxMessage) String() string {
 func (*MailboxMessage) ProtoMessage() {}
 
 func (x *MailboxMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[8]
+	mi := &file_messages_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -509,7 +570,7 @@ func (x *MailboxMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MailboxMessage.ProtoReflect.Descriptor instead.
 func (*MailboxMessage) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{8}
+	return file_messages_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MailboxMessage) GetInstanceId() []byte {
@@ -579,7 +640,7 @@ type StartPeriod struct {
 
 func (x *StartPeriod) Reset() {
 	*x = StartPeriod{}
-	mi := &file_messages_proto_msgTypes[9]
+	mi := &file_messages_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +652,7 @@ func (x *StartPeriod) String() string {
 func (*StartPeriod) ProtoMessage() {}
 
 func (x *StartPeriod) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[9]
+	mi := &file_messages_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +665,7 @@ func (x *StartPeriod) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartPeriod.ProtoReflect.Descriptor instead.
 func (*StartPeriod) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{9}
+	return file_messages_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StartPeriod) GetPeriodId() uint64 {
@@ -633,7 +694,7 @@ type Rollback struct {
 
 func (x *Rollback) Reset() {
 	*x = Rollback{}
-	mi := &file_messages_proto_msgTypes[10]
+	mi := &file_messages_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -645,7 +706,7 @@ func (x *Rollback) String() string {
 func (*Rollback) ProtoMessage() {}
 
 func (x *Rollback) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[10]
+	mi := &file_messages_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -658,7 +719,7 @@ func (x *Rollback) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Rollback.ProtoReflect.Descriptor instead.
 func (*Rollback) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{10}
+	return file_messages_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Rollback) GetPeriodId() uint64 {
@@ -693,7 +754,7 @@ type NativeDecided struct {
 
 func (x *NativeDecided) Reset() {
 	*x = NativeDecided{}
-	mi := &file_messages_proto_msgTypes[11]
+	mi := &file_messages_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +766,7 @@ func (x *NativeDecided) String() string {
 func (*NativeDecided) ProtoMessage() {}
 
 func (x *NativeDecided) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[11]
+	mi := &file_messages_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +779,7 @@ func (x *NativeDecided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeDecided.ProtoReflect.Descriptor instead.
 func (*NativeDecided) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{11}
+	return file_messages_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *NativeDecided) GetInstanceId() []byte {
@@ -746,7 +807,7 @@ type WSDecided struct {
 
 func (x *WSDecided) Reset() {
 	*x = WSDecided{}
-	mi := &file_messages_proto_msgTypes[12]
+	mi := &file_messages_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -758,7 +819,7 @@ func (x *WSDecided) String() string {
 func (*WSDecided) ProtoMessage() {}
 
 func (x *WSDecided) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[12]
+	mi := &file_messages_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -771,7 +832,7 @@ func (x *WSDecided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WSDecided.ProtoReflect.Descriptor instead.
 func (*WSDecided) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{12}
+	return file_messages_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WSDecided) GetInstanceId() []byte {
@@ -816,7 +877,7 @@ type Message struct {
 
 func (x *Message) Reset() {
 	*x = Message{}
-	mi := &file_messages_proto_msgTypes[13]
+	mi := &file_messages_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -828,7 +889,7 @@ func (x *Message) String() string {
 func (*Message) ProtoMessage() {}
 
 func (x *Message) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[13]
+	mi := &file_messages_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -841,7 +902,7 @@ func (x *Message) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Message.ProtoReflect.Descriptor instead.
 func (*Message) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{13}
+	return file_messages_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Message) GetSenderId() string {
@@ -1082,14 +1143,19 @@ const file_messages_proto_rawDesc = "" +
 	"\x04Ping\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\"$\n" +
 	"\x04Pong\x12\x1c\n" +
-	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\"/\n" +
-	"\tXTRequest\x12\"\n" +
-	"\ftransactions\x18\x01 \x03(\fR\ftransactions\"\x88\x01\n" +
-	"\rStartInstance\x12\x1b\n" +
-	"\tperiod_id\x18\x01 \x01(\x04R\bperiodId\x12'\n" +
-	"\x0fsequence_number\x18\x02 \x01(\x04R\x0esequenceNumber\x121\n" +
+	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\"Q\n" +
+	"\x12TransactionRequest\x12\x19\n" +
+	"\bchain_id\x18\x01 \x01(\fR\achainId\x12 \n" +
+	"\vtransaction\x18\x02 \x03(\fR\vtransaction\"L\n" +
+	"\tXTRequest\x12?\n" +
+	"\ftransactions\x18\x01 \x03(\v2\x1b.compose.TransactionRequestR\ftransactions\"\xa9\x01\n" +
+	"\rStartInstance\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\fR\n" +
+	"instanceId\x12\x1b\n" +
+	"\tperiod_id\x18\x02 \x01(\x04R\bperiodId\x12'\n" +
+	"\x0fsequence_number\x18\x03 \x01(\x04R\x0esequenceNumber\x121\n" +
 	"\n" +
-	"xt_request\x18\x03 \x01(\v2\x12.compose.XTRequestR\txtRequest\"V\n" +
+	"xt_request\x18\x04 \x01(\v2\x12.compose.XTRequestR\txtRequest\"V\n" +
 	"\x04Vote\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\fR\n" +
 	"instanceId\x12\x19\n" +
@@ -1157,43 +1223,45 @@ func file_messages_proto_rawDescGZIP() []byte {
 	return file_messages_proto_rawDescData
 }
 
-var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_messages_proto_goTypes = []any{
-	(*HandshakeRequest)(nil),  // 0: compose.HandshakeRequest
-	(*HandshakeResponse)(nil), // 1: compose.HandshakeResponse
-	(*Ping)(nil),              // 2: compose.Ping
-	(*Pong)(nil),              // 3: compose.Pong
-	(*XTRequest)(nil),         // 4: compose.XTRequest
-	(*StartInstance)(nil),     // 5: compose.StartInstance
-	(*Vote)(nil),              // 6: compose.Vote
-	(*Decided)(nil),           // 7: compose.Decided
-	(*MailboxMessage)(nil),    // 8: compose.MailboxMessage
-	(*StartPeriod)(nil),       // 9: compose.StartPeriod
-	(*Rollback)(nil),          // 10: compose.Rollback
-	(*NativeDecided)(nil),     // 11: compose.NativeDecided
-	(*WSDecided)(nil),         // 12: compose.WSDecided
-	(*Message)(nil),           // 13: compose.Message
+	(*HandshakeRequest)(nil),   // 0: compose.HandshakeRequest
+	(*HandshakeResponse)(nil),  // 1: compose.HandshakeResponse
+	(*Ping)(nil),               // 2: compose.Ping
+	(*Pong)(nil),               // 3: compose.Pong
+	(*TransactionRequest)(nil), // 4: compose.TransactionRequest
+	(*XTRequest)(nil),          // 5: compose.XTRequest
+	(*StartInstance)(nil),      // 6: compose.StartInstance
+	(*Vote)(nil),               // 7: compose.Vote
+	(*Decided)(nil),            // 8: compose.Decided
+	(*MailboxMessage)(nil),     // 9: compose.MailboxMessage
+	(*StartPeriod)(nil),        // 10: compose.StartPeriod
+	(*Rollback)(nil),           // 11: compose.Rollback
+	(*NativeDecided)(nil),      // 12: compose.NativeDecided
+	(*WSDecided)(nil),          // 13: compose.WSDecided
+	(*Message)(nil),            // 14: compose.Message
 }
 var file_messages_proto_depIdxs = []int32{
-	4,  // 0: compose.StartInstance.xt_request:type_name -> compose.XTRequest
-	0,  // 1: compose.Message.handshake_request:type_name -> compose.HandshakeRequest
-	1,  // 2: compose.Message.handshake_response:type_name -> compose.HandshakeResponse
-	2,  // 3: compose.Message.ping:type_name -> compose.Ping
-	3,  // 4: compose.Message.pong:type_name -> compose.Pong
-	4,  // 5: compose.Message.xt_request:type_name -> compose.XTRequest
-	5,  // 6: compose.Message.start_instance:type_name -> compose.StartInstance
-	6,  // 7: compose.Message.vote:type_name -> compose.Vote
-	7,  // 8: compose.Message.decided:type_name -> compose.Decided
-	8,  // 9: compose.Message.mailbox_message:type_name -> compose.MailboxMessage
-	9,  // 10: compose.Message.start_period:type_name -> compose.StartPeriod
-	10, // 11: compose.Message.rollback:type_name -> compose.Rollback
-	11, // 12: compose.Message.native_decided:type_name -> compose.NativeDecided
-	12, // 13: compose.Message.ws_decided:type_name -> compose.WSDecided
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	4,  // 0: compose.XTRequest.transactions:type_name -> compose.TransactionRequest
+	5,  // 1: compose.StartInstance.xt_request:type_name -> compose.XTRequest
+	0,  // 2: compose.Message.handshake_request:type_name -> compose.HandshakeRequest
+	1,  // 3: compose.Message.handshake_response:type_name -> compose.HandshakeResponse
+	2,  // 4: compose.Message.ping:type_name -> compose.Ping
+	3,  // 5: compose.Message.pong:type_name -> compose.Pong
+	5,  // 6: compose.Message.xt_request:type_name -> compose.XTRequest
+	6,  // 7: compose.Message.start_instance:type_name -> compose.StartInstance
+	7,  // 8: compose.Message.vote:type_name -> compose.Vote
+	8,  // 9: compose.Message.decided:type_name -> compose.Decided
+	9,  // 10: compose.Message.mailbox_message:type_name -> compose.MailboxMessage
+	10, // 11: compose.Message.start_period:type_name -> compose.StartPeriod
+	11, // 12: compose.Message.rollback:type_name -> compose.Rollback
+	12, // 13: compose.Message.native_decided:type_name -> compose.NativeDecided
+	13, // 14: compose.Message.ws_decided:type_name -> compose.WSDecided
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_messages_proto_init() }
@@ -1201,7 +1269,7 @@ func file_messages_proto_init() {
 	if File_messages_proto != nil {
 		return
 	}
-	file_messages_proto_msgTypes[13].OneofWrappers = []any{
+	file_messages_proto_msgTypes[14].OneofWrappers = []any{
 		(*Message_HandshakeRequest)(nil),
 		(*Message_HandshakeResponse)(nil),
 		(*Message_Ping)(nil),
@@ -1222,7 +1290,7 @@ func file_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_messages_proto_rawDesc), len(file_messages_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

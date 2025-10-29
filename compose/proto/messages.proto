@@ -36,16 +36,24 @@ message Pong {
 
 // It's used that InstanceID <- hash(period_id + sequence_number + xt_request)
 
-// Cross-chain transaction request
-message XTRequest { // from User
-  repeated bytes transactions = 1; // List of RLP encoded Ethereum transactions
+
+// TransactionRequest represents a request of multiple transactions for a specific chain
+message TransactionRequest {
+  bytes chain_id = 1;
+  repeated bytes transaction = 2; // RLP encoded Ethereum transactions
+}
+
+// Cross-chain transaction request with multiple requests (one per chain)
+message XTRequest {
+  repeated TransactionRequest transactions = 1;
 }
 
 // Message to start cross-chain transaction coordination
 message StartInstance {
-  uint64 period_id = 1; // Current period ID
-  uint64 sequence_number = 2; // Sequence number for ordering within the period
-  XTRequest xt_request = 3; // The cross-chain transaction request
+  bytes instance_id = 1; // Unique instance ID
+  uint64 period_id = 2; // Current period ID
+  uint64 sequence_number = 3; // Sequence number for ordering within the period
+  XTRequest xt_request = 4; // The cross-chain transaction request
 }
 
 // 2PC Vote message from a sequencer to the SP
