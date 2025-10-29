@@ -15,15 +15,28 @@ func testLogger() zerolog.Logger {
 	return zerolog.New(io.Discard)
 }
 
+func txReq(chain compose.ChainID, payloads ...string) compose.TransactionRequest {
+	data := make([][]byte, len(payloads))
+	for i, p := range payloads {
+		data[i] = []byte(p)
+	}
+	return compose.TransactionRequest{
+		ChainID:      chain,
+		Transactions: data,
+	}
+}
+
 func TestPublisher_AllTrueVotesDecidesTrue(t *testing.T) {
 	net := &fakePublisherNetwork{}
 	inst := compose.Instance{
 		ID:             compose.InstanceID{1},
 		PeriodID:       7,
 		SequenceNumber: 3,
-		XTRequest: []compose.Transaction{
-			fakeTx{chain: 1, name: "a"},
-			fakeTx{chain: 2, name: "b"},
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				txReq(1, "a"),
+				txReq(2, "b"),
+			},
 		},
 	}
 
@@ -69,10 +82,12 @@ func TestPublisher_AllTrueVotesDecidesTrue(t *testing.T) {
 func TestPublisher_AnyFalseDecidesFalseEarly(t *testing.T) {
 	net := &fakePublisherNetwork{}
 	inst := compose.Instance{
-		XTRequest: []compose.Transaction{
-			fakeTx{chain: compose.ChainID(10), name: "a"},
-			fakeTx{chain: compose.ChainID(11), name: "b"},
-			fakeTx{chain: compose.ChainID(12), name: "c"},
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				txReq(10, "a"),
+				txReq(11, "b"),
+				txReq(12, "c"),
+			},
 		},
 	}
 	pub, err := NewPublisherInstance(inst, net, testLogger())
@@ -100,9 +115,11 @@ func TestPublisher_AnyFalseDecidesFalseEarly(t *testing.T) {
 func TestPublisher_TimeoutDecidesFalse(t *testing.T) {
 	net := &fakePublisherNetwork{}
 	inst := compose.Instance{
-		XTRequest: []compose.Transaction{
-			fakeTx{chain: compose.ChainID(5), name: "a"},
-			fakeTx{chain: compose.ChainID(6), name: "b"},
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				txReq(5, "a"),
+				txReq(6, "b"),
+			},
 		},
 	}
 	pub, err := NewPublisherInstance(inst, net, testLogger())
@@ -129,9 +146,11 @@ func TestPublisher_TimeoutDecidesFalse(t *testing.T) {
 func TestPublisher_TimeoutAfterTrueDecisionIgnored(t *testing.T) {
 	net := &fakePublisherNetwork{}
 	inst := compose.Instance{
-		XTRequest: []compose.Transaction{
-			fakeTx{chain: compose.ChainID(1), name: "a"},
-			fakeTx{chain: compose.ChainID(2), name: "b"},
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				txReq(1, "a"),
+				txReq(2, "b"),
+			},
 		},
 	}
 	pub, err := NewPublisherInstance(inst, net, testLogger())
@@ -161,9 +180,11 @@ func TestPublisher_TimeoutAfterTrueDecisionIgnored(t *testing.T) {
 func TestPublisher_OneVoteThenTimeout_DecidesFalse(t *testing.T) {
 	net := &fakePublisherNetwork{}
 	inst := compose.Instance{
-		XTRequest: []compose.Transaction{
-			fakeTx{chain: compose.ChainID(1), name: "a"},
-			fakeTx{chain: compose.ChainID(2), name: "b"},
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				txReq(1, "a"),
+				txReq(2, "b"),
+			},
 		},
 	}
 	pub, err := NewPublisherInstance(inst, net, testLogger())

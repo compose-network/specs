@@ -8,11 +8,11 @@ import (
 	"github.com/compose-network/specs/compose"
 )
 
-// GenerateInstanceID returns SHA256(periodID || seq || req[0].Bytes() || ... || req[n].Bytes())
+// GenerateInstanceID returns SHA256(periodID || seq || tx1 || tx2 || ... || txn)
 func GenerateInstanceID(
 	periodID compose.PeriodID,
 	seq compose.SequenceNumber,
-	req []compose.Transaction,
+	xtRequest compose.XTRequest,
 ) compose.InstanceID {
 	var b [8]byte
 	buf := bytes.NewBuffer(nil)
@@ -26,9 +26,11 @@ func GenerateInstanceID(
 	buf.Write(b[:])
 
 	// Append each transaction's raw bytes
-	for _, tx := range req {
-		if data := tx.Bytes(); len(data) > 0 {
-			buf.Write(data)
+	for _, req := range xtRequest.Transactions {
+		for _, data := range req.Transactions {
+			if len(data) > 0 {
+				buf.Write(data)
+			}
 		}
 	}
 

@@ -21,7 +21,7 @@ type Publisher interface {
 	// StartPeriod is called whenever a new period starts (i.e. CurrEthereumEpoch % 10 == 0).
 	StartPeriod() error
 	// StartInstance is called by the upper layer to try starting a new instance from the queued requests.
-	StartInstance(req []compose.Transaction) (compose.Instance, error)
+	StartInstance(req compose.XTRequest) (compose.Instance, error)
 	// DecideInstance is called once an instance gets decided.
 	DecideInstance(instance compose.Instance) error
 	// AdvanceSettledState is called when L1 emits a new settled state event
@@ -137,12 +137,12 @@ func (p *publisher) StartPeriod() error {
 // StartInstance is called by the upper layer to try starting a new instance.
 // If the instance can not be started, it returns an error.
 // Else, it returns the created instance.
-func (p *publisher) StartInstance(request []compose.Transaction) (compose.Instance, error) {
+func (p *publisher) StartInstance(request compose.XTRequest) (compose.Instance, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	// Requests must have at least 2 transactions
-	if len(request) < 2 {
+	if len(request.Transactions) < 2 {
 		return compose.Instance{}, ErrInvalidRequest
 	}
 

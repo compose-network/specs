@@ -38,7 +38,12 @@ func TestSequencer_VoteTrueOnImmediateSuccess(t *testing.T) {
 	eng := &fakeExecutionEngine{id: 1, steps: []simulateResp{ /* default success */ }}
 	net := &fakeSequencerNetwork{}
 	inst := compose.Instance{
-		XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "a"}, fakeTx{chain: 2, name: "b"}},
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 1, Transactions: [][]byte{[]byte("a")}},
+				{ChainID: 2, Transactions: [][]byte{[]byte("b")}},
+			},
+		},
 	}
 
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{9}, testLogger())
@@ -72,7 +77,13 @@ func TestSequencer_ReadThenMailboxThenSuccess(t *testing.T) {
 		steps: []simulateResp{{read: &need.MailboxMessageHeader}, {read: nil}},
 	}
 	net := &fakeSequencerNetwork{}
-	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "a"}}}
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 1, Transactions: [][]byte{[]byte("a")}},
+			},
+		},
+	}
 
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
@@ -100,7 +111,13 @@ func TestSequencer_MultipleReadsOutOfOrder(t *testing.T) {
 		},
 	}
 	net := &fakeSequencerNetwork{}
-	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "x"}}}
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 1, Transactions: [][]byte{[]byte("x")}},
+			},
+		},
+	}
 
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
@@ -123,7 +140,13 @@ func TestSequencer_TimeoutBeforeVoteSendsFalse(t *testing.T) {
 	need := makeMsg(compose.ChainID(2), compose.ChainID(1), compose.SessionID(1), "NEED", nil)
 	eng := &fakeExecutionEngine{id: 1, steps: []simulateResp{{read: &need.MailboxMessageHeader}}}
 	net := &fakeSequencerNetwork{}
-	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "x"}}}
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 1, Transactions: [][]byte{[]byte("x")}},
+			},
+		},
+	}
 
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
@@ -147,7 +170,13 @@ func TestSequencer_SimulationErrorVotesFalse(t *testing.T) {
 	boom := simulateResp{read: nil, err: assertErr("boom")}
 	eng := &fakeExecutionEngine{id: 1, steps: []simulateResp{boom}}
 	net := &fakeSequencerNetwork{}
-	inst := compose.Instance{XTRequest: []compose.Transaction{fakeTx{chain: 1, name: "x"}}}
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 1, Transactions: [][]byte{[]byte("x")}},
+			},
+		},
+	}
 
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
@@ -167,12 +196,14 @@ func (e assertErr) Error() string { return string(e) }
 func TestSequencer_FiltersTransactionsByChainID(t *testing.T) {
 	eng := &fakeExecutionEngine{id: 42, steps: []simulateResp{}}
 	net := &fakeSequencerNetwork{}
-	txs := []compose.Transaction{
-		fakeTx{chain: 42, name: "mine1"},
-		fakeTx{chain: 7, name: "other"},
-		fakeTx{chain: 42, name: "mine2"},
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 42, Transactions: [][]byte{[]byte("mine1"), []byte("mine2")}},
+				{ChainID: 7, Transactions: [][]byte{[]byte("other")}},
+			},
+		},
 	}
-	inst := compose.Instance{XTRequest: txs}
 
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
@@ -182,7 +213,7 @@ func TestSequencer_FiltersTransactionsByChainID(t *testing.T) {
 	got := eng.lastReq.Transactions
 	var gotNames []string
 	for _, tr := range got {
-		gotNames = append(gotNames, tr.(fakeTx).name)
+		gotNames = append(gotNames, string(tr))
 	}
 	assert.Equal(t, []string{"mine1", "mine2"}, gotNames)
 }
@@ -191,9 +222,13 @@ func TestSequencer_NoTransactions_ReturnsErrNoTransactions(t *testing.T) {
 	eng := &fakeExecutionEngine{id: compose.ChainID(42)}
 	net := &fakeSequencerNetwork{}
 	// Only transactions for another chain
-	inst := compose.Instance{XTRequest: []compose.Transaction{
-		fakeTx{chain: compose.ChainID(7), name: "other"},
-	}}
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 7, Transactions: [][]byte{[]byte("other")}},
+			},
+		},
+	}
 
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.ErrorIs(t, err, ErrNoTransactions)

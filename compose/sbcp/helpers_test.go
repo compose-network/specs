@@ -4,14 +4,35 @@ import (
 	"github.com/compose-network/specs/compose"
 )
 
-// fakeChainTx is a minimal compose.Transaction for SBCP tests.
-type fakeChainTx struct {
+type chainRequest struct {
 	chain compose.ChainID
-	body  []byte
+	txs   [][]byte
 }
 
-func (t fakeChainTx) ChainID() compose.ChainID { return t.chain }
-func (t fakeChainTx) Bytes() []byte            { return append([]byte(nil), t.body...) }
+func chainReq(chain compose.ChainID, txs ...[]byte) chainRequest {
+	copied := make([][]byte, len(txs))
+	for i, tx := range txs {
+		copied[i] = append([]byte(nil), tx...)
+	}
+	return chainRequest{chain: chain, txs: copied}
+}
+
+func makeXTRequest(entries ...chainRequest) compose.XTRequest {
+	req := compose.XTRequest{
+		Transactions: make([]compose.TransactionRequest, len(entries)),
+	}
+	for i, entry := range entries {
+		txs := make([][]byte, len(entry.txs))
+		for j, tx := range entry.txs {
+			txs[j] = append([]byte(nil), tx...)
+		}
+		req.Transactions[i] = compose.TransactionRequest{
+			ChainID:      entry.chain,
+			Transactions: txs,
+		}
+	}
+	return req
+}
 
 // fakeMessenger records broadcasts for assertions.
 type fakeMessenger struct {

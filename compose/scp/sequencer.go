@@ -36,7 +36,7 @@ const (
 type SimulationRequest struct {
 	// mailbox.putInbox transactions
 	PutInboxMessages []MailboxMessage
-	Transactions     []compose.Transaction
+	Transactions     [][]byte
 	Snapshot         compose.StateRoot
 }
 
@@ -68,7 +68,7 @@ type sequencerInstance struct {
 	decisionState compose.DecisionState
 
 	// List of transactions to be executed by this chain (from the request)
-	txs []compose.Transaction
+	txs [][]byte
 	// Read requests made by the transactions (returned by simulations). Removed on fulfillment.
 	expectedReadRequests []MailboxMessageHeader
 	// Incoming mailbox messages that can be used to satisfy expected reads.
@@ -98,7 +98,7 @@ func NewSequencerInstance(
 		network:              network,
 		state:                SeqStateSimulating, // First state
 		decisionState:        compose.DecisionStatePending,
-		txs:                  make([]compose.Transaction, 0),
+		txs:                  make([][]byte, 0),
 		putInboxMessages:     make([]MailboxMessage, 0),
 		expectedReadRequests: make([]MailboxMessageHeader, 0),
 		pendingMessages:      make([]MailboxMessage, 0),
@@ -108,10 +108,12 @@ func NewSequencerInstance(
 	}
 
 	// Filter transactions to this chain
-	r.txs = make([]compose.Transaction, 0)
-	for _, tx := range instance.XTRequest {
-		if tx.ChainID() == r.execution.ChainID() {
-			r.txs = append(r.txs, tx)
+	for _, req := range instance.XTRequest.Transactions {
+		if req.ChainID != r.execution.ChainID() {
+			continue
+		}
+		for _, payload := range req.Transactions {
+			r.txs = append(r.txs, append([]byte(nil), payload...))
 		}
 	}
 	if len(r.txs) == 0 {
@@ -141,7 +143,7 @@ func (r *sequencerInstance) Run() error {
 	// Run simulation
 	readRequest, writeMessages, err := r.execution.Simulate(SimulationRequest{
 		PutInboxMessages: append([]MailboxMessage(nil), r.putInboxMessages...),
-		Transactions:     append([]compose.Transaction(nil), r.txs...),
+		Transactions:     cloneByteSlices(r.txs),
 		Snapshot:         r.vmSnapshot,
 	})
 	if err != nil {
@@ -196,6 +198,21 @@ func (r *sequencerInstance) sendWriteMessages(messages []MailboxMessage) {
 		r.network.SendMailboxMessage(msg.MailboxMessageHeader.DestChainID, msg)
 		r.writtenMessagesCache = append(r.writtenMessagesCache, msg)
 	}
+}
+
+func cloneByteSlices(src [][]byte) [][]byte {
+	if src == nil {
+		return nil
+	}
+	out := make([][]byte, len(src))
+	for i, b := range src {
+		if b == nil {
+			out[i] = nil
+			continue
+		}
+		out[i] = append([]byte(nil), b...)
+	}
+	return out
 }
 
 // consumeReceivedMailboxMessagesAndSimulate checks if any expected read mailbox messages have been received

@@ -30,27 +30,30 @@ func (id InstanceID) String() string {
 	return hex.EncodeToString(id[:])
 }
 
-// Transaction represents a VM transaction payload.
-type Transaction interface {
-	ChainID() ChainID
-	Bytes() []byte
+type TransactionRequest struct {
+	ChainID      ChainID
+	Transactions [][]byte
+}
+
+type XTRequest struct {
+	Transactions []TransactionRequest
 }
 
 type Instance struct {
 	ID             InstanceID
 	PeriodID       PeriodID
 	SequenceNumber SequenceNumber
-	XTRequest      []Transaction
+	XTRequest      XTRequest
 }
 
 func (i *Instance) Chains() []ChainID {
 	return ChainsFromRequest(i.XTRequest)
 }
 
-func ChainsFromRequest(req []Transaction) []ChainID {
+func ChainsFromRequest(xtRequest XTRequest) []ChainID {
 	chainsMap := make(map[ChainID]bool)
-	for _, r := range req {
-		chainsMap[r.ChainID()] = true
+	for _, r := range xtRequest.Transactions {
+		chainsMap[r.ChainID] = true
 	}
 	chains := make([]ChainID, 0, len(chainsMap))
 	for chainID := range chainsMap {

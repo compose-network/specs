@@ -63,19 +63,19 @@ func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 	pub := NewPublisher(m, compose.PeriodID(5), compose.SuperblockNumber(5), compose.SuperBlockHash{1}, 0, testLogger())
 
 	// First req touches chains {1,2}
-	req1 := []compose.Transaction{
-		fakeChainTx{chain: 1, body: []byte("a")},
-		fakeChainTx{chain: 2, body: []byte("b")},
-	}
+	req1 := makeXTRequest(
+		chainReq(1, []byte("a")),
+		chainReq(2, []byte("b")),
+	)
 	inst1, err := pub.StartInstance(req1)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []compose.ChainID{1, 2}, inst1.Chains())
 
 	// Disjoint {3,4} should be allowed
-	req2 := []compose.Transaction{
-		fakeChainTx{chain: 3, body: []byte("c")},
-		fakeChainTx{chain: 4, body: []byte("d")},
-	}
+	req2 := makeXTRequest(
+		chainReq(3, []byte("c")),
+		chainReq(4, []byte("d")),
+	)
 	inst2, err := pub.StartInstance(req2)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []compose.ChainID{3, 4}, inst2.Chains())
@@ -87,13 +87,19 @@ func TestPublisher_StartInstance_conflicting_set_rejected(t *testing.T) {
 
 	// Activate {1,2}
 	_, err := pub.StartInstance(
-		[]compose.Transaction{fakeChainTx{1, []byte("a")}, fakeChainTx{2, []byte("b")}},
+		makeXTRequest(
+			chainReq(1, []byte("a")),
+			chainReq(2, []byte("b")),
+		),
 	)
 	require.NoError(t, err)
 
 	// Conflicts with {2,3}
 	_, err = pub.StartInstance(
-		[]compose.Transaction{fakeChainTx{2, []byte("x")}, fakeChainTx{3, []byte("y")}},
+		makeXTRequest(
+			chainReq(2, []byte("x")),
+			chainReq(3, []byte("y")),
+		),
 	)
 	require.ErrorIs(t, err, ErrCannotStartInstance)
 }
@@ -102,11 +108,10 @@ func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
 	m := &fakeMessenger{}
 	pub := NewPublisher(m, compose.PeriodID(2), compose.SuperblockNumber(2), compose.SuperBlockHash{1}, 0, testLogger())
 
-	inst, err := pub.StartInstance([]compose.Transaction{
-		fakeChainTx{chain: 7, body: []byte("a")},
-		fakeChainTx{chain: 7, body: []byte("b")},
-		fakeChainTx{chain: 8, body: []byte("c")},
-	})
+	inst, err := pub.StartInstance(makeXTRequest(
+		chainReq(7, []byte("a"), []byte("b")),
+		chainReq(8, []byte("c")),
+	))
 	require.NoError(t, err)
 	chains := inst.Chains()
 	assert.Len(t, chains, 2)
@@ -118,16 +123,16 @@ func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 	// Start aligned: target = finalized + 1 = 10
 	pub := NewPublisher(m, compose.PeriodID(10), compose.SuperblockNumber(9), compose.SuperBlockHash{1}, 0, testLogger())
 
-	i1, err := pub.StartInstance([]compose.Transaction{
-		fakeChainTx{1, []byte("a1")},
-		fakeChainTx{2, []byte("a2")},
-	})
+	i1, err := pub.StartInstance(makeXTRequest(
+		chainReq(1, []byte("a1")),
+		chainReq(2, []byte("a2")),
+	))
 	require.NoError(t, err)
 	// Disjoint participants to avoid ErrCannotStartInstance
-	i2, err := pub.StartInstance([]compose.Transaction{
-		fakeChainTx{3, []byte("b1")},
-		fakeChainTx{4, []byte("b2")},
-	})
+	i2, err := pub.StartInstance(makeXTRequest(
+		chainReq(3, []byte("b1")),
+		chainReq(4, []byte("b2")),
+	))
 	require.NoError(t, err)
 
 	assert.Equal(t, compose.SequenceNumber(1), i1.SequenceNumber)
@@ -136,10 +141,10 @@ func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 	// New period resets sequence counter and emits StartPeriod broadcast
 	require.NoError(t, pub.StartPeriod())
 	require.Len(t, m.startPeriods, 1)
-	i3, err := pub.StartInstance([]compose.Transaction{
-		fakeChainTx{5, []byte("c1")},
-		fakeChainTx{6, []byte("c2")},
-	})
+	i3, err := pub.StartInstance(makeXTRequest(
+		chainReq(5, []byte("c1")),
+		chainReq(6, []byte("c2")),
+	))
 	require.NoError(t, err)
 	assert.Equal(t, compose.SequenceNumber(1), i3.SequenceNumber)
 }
@@ -147,7 +152,10 @@ func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 func TestPublisher_StartInstance_populates_instance_fields(t *testing.T) {
 	messenger := &fakeMessenger{}
 	pub := NewPublisher(messenger, compose.PeriodID(1), compose.SuperblockNumber(1), compose.SuperBlockHash{1}, 0, testLogger())
-	req := []compose.Transaction{fakeChainTx{1, []byte("x")}, fakeChainTx{2, []byte("y")}}
+	req := makeXTRequest(
+		chainReq(1, []byte("x")),
+		chainReq(2, []byte("y")),
+	)
 
 	inst, err := pub.StartInstance(req)
 	require.NoError(t, err)
@@ -161,7 +169,10 @@ func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.
 	m := &fakeMessenger{}
 	pub := NewPublisher(m, compose.PeriodID(1), compose.SuperblockNumber(1), compose.SuperBlockHash{1}, 0, testLogger())
 	inst, err := pub.StartInstance(
-		[]compose.Transaction{fakeChainTx{1, []byte("a")}, fakeChainTx{2, []byte("b")}},
+		makeXTRequest(
+			chainReq(1, []byte("a")),
+			chainReq(2, []byte("b")),
+		),
 	)
 	require.NoError(t, err)
 
@@ -175,7 +186,10 @@ func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.
 
 	// Starting another instance with same chains should now be possible
 	_, err = pub.StartInstance(
-		[]compose.Transaction{fakeChainTx{1, []byte("c")}, fakeChainTx{2, []byte("d")}},
+		makeXTRequest(
+			chainReq(1, []byte("c")),
+			chainReq(2, []byte("d")),
+		),
 	)
 	require.NoError(t, err)
 }
@@ -198,7 +212,10 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 
 	// Activate some chains
 	_, err := pub.StartInstance(
-		[]compose.Transaction{fakeChainTx{1, []byte("a")}, fakeChainTx{2, []byte("b")}},
+		makeXTRequest(
+			chainReq(1, []byte("a")),
+			chainReq(2, []byte("b")),
+		),
 	)
 	require.NoError(t, err)
 
@@ -215,16 +232,12 @@ func TestPublisher_StartInstance_invalid_requests(t *testing.T) {
 	m := &fakeMessenger{}
 	pub := NewPublisher(m, compose.PeriodID(1), compose.SuperblockNumber(1), compose.SuperBlockHash{1}, 0, testLogger())
 
-	// Nil request
-	_, err := pub.StartInstance(nil)
-	require.ErrorIs(t, err, ErrInvalidRequest)
-
-	// Empty slice
-	_, err = pub.StartInstance([]compose.Transaction{})
+	// Empty request
+	_, err := pub.StartInstance(compose.XTRequest{})
 	require.ErrorIs(t, err, ErrInvalidRequest)
 
 	// Single-transaction request
-	_, err = pub.StartInstance([]compose.Transaction{fakeChainTx{1, []byte("only")}})
+	_, err = pub.StartInstance(makeXTRequest(chainReq(1, []byte("only"))))
 	require.ErrorIs(t, err, ErrInvalidRequest)
 
 	// No broadcast occurred

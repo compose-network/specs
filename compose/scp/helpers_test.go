@@ -4,20 +4,11 @@ import (
 	"github.com/compose-network/specs/compose"
 )
 
-// fakeTx is a minimal Transaction implementation for tests.
-type fakeTx struct {
-	chain compose.ChainID
-	name  string
-}
-
-func (t fakeTx) ChainID() compose.ChainID { return t.chain }
-func (t fakeTx) Bytes() []byte            { return []byte(t.name) }
-
 // fakePublisherNetwork records calls for assertions.
 type fakePublisherNetwork struct {
 	startCalled   int
 	startInstance compose.Instance
-	startXT       []compose.Transaction
+	startXT       compose.XTRequest
 
 	decidedCalled int
 	decisions     []struct {
@@ -29,7 +20,7 @@ type fakePublisherNetwork struct {
 func (f *fakePublisherNetwork) SendStartInstance(instance compose.Instance) {
 	f.startCalled++
 	f.startInstance = instance
-	f.startXT = append([]compose.Transaction(nil), instance.XTRequest...)
+	f.startXT = cloneXTRequest(instance.XTRequest)
 }
 
 func (f *fakePublisherNetwork) SendDecided(id compose.InstanceID, decided bool) {
@@ -58,7 +49,11 @@ type fakeExecutionEngine struct {
 func (e *fakeExecutionEngine) ChainID() compose.ChainID { return e.id }
 
 func (e *fakeExecutionEngine) Simulate(req SimulationRequest) (*MailboxMessageHeader, []MailboxMessage, error) {
-	e.lastReq = req
+	e.lastReq = SimulationRequest{
+		PutInboxMessages: append([]MailboxMessage(nil), req.PutInboxMessages...),
+		Transactions:     cloneByteSlices(req.Transactions),
+		Snapshot:         req.Snapshot,
+	}
 	if e.calls < len(e.steps) {
 		s := e.steps[e.calls]
 		e.calls++
@@ -88,4 +83,17 @@ func (n *fakeSequencerNetwork) SendMailboxMessage(recipient compose.ChainID, msg
 
 func (n *fakeSequencerNetwork) SendVote(v bool) {
 	n.votes = append(n.votes, v)
+}
+
+func cloneXTRequest(req compose.XTRequest) compose.XTRequest {
+	out := compose.XTRequest{
+		Transactions: make([]compose.TransactionRequest, len(req.Transactions)),
+	}
+	for i, tr := range req.Transactions {
+		out.Transactions[i] = compose.TransactionRequest{
+			ChainID:      tr.ChainID,
+			Transactions: cloneByteSlices(tr.Transactions),
+		}
+	}
+	return out
 }
