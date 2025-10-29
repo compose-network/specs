@@ -250,7 +250,7 @@ func (x *Pong) GetTimestamp() int64 {
 // TransactionRequest represents a request of multiple transactions for a specific chain
 type TransactionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChainId       []byte                 `protobuf:"bytes,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	ChainId       uint64                 `protobuf:"varint,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
 	Transaction   [][]byte               `protobuf:"bytes,2,rep,name=transaction,proto3" json:"transaction,omitempty"` // RLP encoded Ethereum transactions
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -286,11 +286,11 @@ func (*TransactionRequest) Descriptor() ([]byte, []int) {
 	return file_messages_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *TransactionRequest) GetChainId() []byte {
+func (x *TransactionRequest) GetChainId() uint64 {
 	if x != nil {
 		return x.ChainId
 	}
-	return nil
+	return 0
 }
 
 func (x *TransactionRequest) GetTransaction() [][]byte {
@@ -302,10 +302,10 @@ func (x *TransactionRequest) GetTransaction() [][]byte {
 
 // Cross-chain transaction request with multiple requests (one per chain)
 type XTRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Transactions  []*TransactionRequest  `protobuf:"bytes,1,rep,name=transactions,proto3" json:"transactions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TransactionRequests []*TransactionRequest  `protobuf:"bytes,1,rep,name=transaction_requests,json=transactionRequests,proto3" json:"transaction_requests,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *XTRequest) Reset() {
@@ -338,9 +338,9 @@ func (*XTRequest) Descriptor() ([]byte, []int) {
 	return file_messages_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *XTRequest) GetTransactions() []*TransactionRequest {
+func (x *XTRequest) GetTransactionRequests() []*TransactionRequest {
 	if x != nil {
-		return x.Transactions
+		return x.TransactionRequests
 	}
 	return nil
 }
@@ -1145,10 +1145,10 @@ const file_messages_proto_rawDesc = "" +
 	"\x04Pong\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\"Q\n" +
 	"\x12TransactionRequest\x12\x19\n" +
-	"\bchain_id\x18\x01 \x01(\fR\achainId\x12 \n" +
-	"\vtransaction\x18\x02 \x03(\fR\vtransaction\"L\n" +
-	"\tXTRequest\x12?\n" +
-	"\ftransactions\x18\x01 \x03(\v2\x1b.compose.TransactionRequestR\ftransactions\"\xa9\x01\n" +
+	"\bchain_id\x18\x01 \x01(\x04R\achainId\x12 \n" +
+	"\vtransaction\x18\x02 \x03(\fR\vtransaction\"[\n" +
+	"\tXTRequest\x12N\n" +
+	"\x14transaction_requests\x18\x01 \x03(\v2\x1b.compose.TransactionRequestR\x13transactionRequests\"\xa9\x01\n" +
 	"\rStartInstance\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\fR\n" +
 	"instanceId\x12\x1b\n" +
@@ -1242,7 +1242,7 @@ var file_messages_proto_goTypes = []any{
 	(*Message)(nil),            // 14: compose.Message
 }
 var file_messages_proto_depIdxs = []int32{
-	4,  // 0: compose.XTRequest.transactions:type_name -> compose.TransactionRequest
+	4,  // 0: compose.XTRequest.transaction_requests:type_name -> compose.TransactionRequest
 	5,  // 1: compose.StartInstance.xt_request:type_name -> compose.XTRequest
 	0,  // 2: compose.Message.handshake_request:type_name -> compose.HandshakeRequest
 	1,  // 3: compose.Message.handshake_response:type_name -> compose.HandshakeResponse

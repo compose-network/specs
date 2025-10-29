@@ -39,13 +39,13 @@ message Pong {
 
 // TransactionRequest represents a request of multiple transactions for a specific chain
 message TransactionRequest {
-  bytes chain_id = 1;
+  uint64 chain_id = 1;
   repeated bytes transaction = 2; // RLP encoded Ethereum transactions
 }
 
 // Cross-chain transaction request with multiple requests (one per chain)
 message XTRequest {
-  repeated TransactionRequest transactions = 1;
+  repeated TransactionRequest transaction_requests = 1;
 }
 
 // Message to start cross-chain transaction coordination
