@@ -27,6 +27,13 @@ func makeMsg(
 	}
 }
 
+func requireSequencerImpl(t *testing.T, seq SequencerInstance) *sequencerInstance {
+	t.Helper()
+	impl, ok := seq.(*sequencerInstance)
+	require.True(t, ok, "expected *sequencerInstance, got %T", seq)
+	return impl
+}
+
 func TestSequencer_VoteTrueOnImmediateSuccess(t *testing.T) {
 	eng := &fakeExecutionEngine{id: 1, steps: []simulateResp{ /* default success */ }}
 	net := &fakeSequencerNetwork{}
@@ -37,21 +44,24 @@ func TestSequencer_VoteTrueOnImmediateSuccess(t *testing.T) {
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{9}, testLogger())
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
+	impl := requireSequencerImpl(t, seq)
 
 	if assert.Len(t, net.votes, 1) {
 		assert.True(t, net.votes[0])
 	}
 
-	// After success it should be waiting for decided
-	assert.Equal(t, SeqStateWaitingDecided, seq.state)
+	// After success it should still be pending until a decided message arrives.
+	assert.Equal(t, compose.DecisionStatePending, seq.DecisionState())
+	assert.Equal(t, SeqStateWaitingDecided, impl.state)
 
 	// Decided true moves to done accepted
 	require.NoError(t, seq.ProcessDecidedMessage(true))
-	assert.Equal(t, SeqStateDone, seq.state)
-	assert.Equal(t, compose.DecisionStateAccepted, seq.decisionState)
+	assert.Equal(t, compose.DecisionStateAccepted, seq.DecisionState())
+	assert.Equal(t, SeqStateDone, impl.state)
 
 	// Subsequent decided is ignored
 	require.NoError(t, seq.ProcessDecidedMessage(false))
+	assert.Equal(t, compose.DecisionStateAccepted, seq.DecisionState())
 }
 
 func TestSequencer_ReadThenMailboxThenSuccess(t *testing.T) {
@@ -118,14 +128,16 @@ func TestSequencer_TimeoutBeforeVoteSendsFalse(t *testing.T) {
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
-	assert.Equal(t, SeqStateSimulating, seq.state)
+	assert.Equal(t, compose.DecisionStatePending, seq.DecisionState())
+	impl := requireSequencerImpl(t, seq)
+	assert.Equal(t, SeqStateSimulating, impl.state)
 
 	seq.Timeout()
 	if assert.Len(t, net.votes, 1) {
 		assert.False(t, net.votes[0])
 	}
-	assert.Equal(t, SeqStateDone, seq.state)
-	assert.Equal(t, compose.DecisionStateRejected, seq.decisionState)
+	assert.Equal(t, compose.DecisionStateRejected, seq.DecisionState())
+	assert.Equal(t, SeqStateDone, impl.state)
 
 	// Now mailbox is ignored
 	require.NoError(t, seq.ProcessMailboxMessage(need))

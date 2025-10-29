@@ -14,6 +14,15 @@ var (
 	ErrNotInSimulatingState = errors.New("sequencer not in simulating state")
 )
 
+// SequencerInstance is an interface that represents the sequencer-side logic for an SCP instance.
+type SequencerInstance interface {
+	DecisionState() compose.DecisionState
+	Run() error
+	ProcessMailboxMessage(msg MailboxMessage) error
+	ProcessDecidedMessage(decided bool) error
+	Timeout()
+}
+
 // SequencerState tracks the state machine for a sequencer in an SCP session.
 type SequencerState int
 
@@ -47,7 +56,7 @@ type SequencerNetwork interface {
 	SendVote(vote bool)
 }
 
-type SequencerInstance struct {
+type sequencerInstance struct {
 	mu sync.Mutex
 
 	// Dependencies
@@ -81,9 +90,9 @@ func NewSequencerInstance(
 	network SequencerNetwork,
 	vmSnapshot compose.StateRoot,
 	logger zerolog.Logger,
-) (*SequencerInstance, error) {
+) (SequencerInstance, error) {
 	// Build runner
-	r := &SequencerInstance{
+	r := &sequencerInstance{
 		mu:                   sync.Mutex{},
 		execution:            execution,
 		network:              network,
@@ -112,7 +121,7 @@ func NewSequencerInstance(
 	return r, nil
 }
 
-func (r *SequencerInstance) DecisionState() compose.DecisionState {
+func (r *sequencerInstance) DecisionState() compose.DecisionState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.decisionState
@@ -122,7 +131,7 @@ func (r *SequencerInstance) DecisionState() compose.DecisionState {
 // If simulation succeeds, it sends Vote(true) to the SP and set state to waiting for decided.
 // If simulation fails due to read miss, it adds the expected read message and looks for new reads to insert.
 // If simulation fails for other reasons, it sends Vote(false) and terminates.
-func (r *SequencerInstance) Run() error {
+func (r *sequencerInstance) Run() error {
 	r.mu.Lock()
 	if r.state != SeqStateSimulating {
 		r.mu.Unlock()
@@ -169,7 +178,7 @@ func (r *SequencerInstance) Run() error {
 	return nil
 }
 
-func (r *SequencerInstance) sendWriteMessages(messages []MailboxMessage) {
+func (r *sequencerInstance) sendWriteMessages(messages []MailboxMessage) {
 	for _, msg := range messages {
 		// Check if belongs to cache
 		alreadySent := false
@@ -191,7 +200,7 @@ func (r *SequencerInstance) sendWriteMessages(messages []MailboxMessage) {
 
 // consumeReceivedMailboxMessagesAndSimulate checks if any expected read mailbox messages have been received
 // If so, remove from the lists, and call run to simulate
-func (r *SequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
+func (r *sequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 	r.mu.Lock()
 	includedAny := false
 
@@ -232,7 +241,7 @@ func (r *SequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 }
 
 // ProcessMailboxMessage processes an incoming mailbox message
-func (r *SequencerInstance) ProcessMailboxMessage(msg MailboxMessage) error {
+func (r *sequencerInstance) ProcessMailboxMessage(msg MailboxMessage) error {
 	r.mu.Lock()
 	if r.state != SeqStateSimulating {
 		r.logger.Info().
@@ -255,7 +264,7 @@ func (r *SequencerInstance) ProcessMailboxMessage(msg MailboxMessage) error {
 }
 
 // ProcessDecidedMessage receives a decided message from the SP
-func (r *SequencerInstance) ProcessDecidedMessage(decided bool) error {
+func (r *sequencerInstance) ProcessDecidedMessage(decided bool) error {
 	r.mu.Lock()
 
 	if r.state == SeqStateDone {
@@ -284,7 +293,7 @@ func (r *SequencerInstance) ProcessDecidedMessage(decided bool) error {
 
 // Timeout is invoked when the timer fires.
 // If not already in waiting for decided or done state, terminates as rejected and sends Vote(false) to SP.
-func (r *SequencerInstance) Timeout() {
+func (r *sequencerInstance) Timeout() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
