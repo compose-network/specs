@@ -79,6 +79,34 @@ func TestPublisher_AllTrueVotesDecidesTrue(t *testing.T) {
 	assert.Equal(t, compose.DecisionStateAccepted, pub.DecisionState())
 }
 
+func TestPublisher_NonParticipantVoteErrors(t *testing.T) {
+	net := &fakePublisherNetwork{}
+	inst := compose.Instance{
+		ID: compose.InstanceID{2},
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				txReq(1, "a"),
+				txReq(2, "b"),
+			},
+		},
+	}
+
+	pub, err := NewPublisherInstance(inst, net, testLogger())
+	require.NoError(t, err)
+	pub.Run()
+
+	err = pub.ProcessVote(compose.ChainID(99), true)
+	require.ErrorIs(t, err, ErrSenderNotParticipant)
+	assert.Equal(t, 0, net.decidedCalled)
+	assert.Equal(t, compose.DecisionStatePending, pub.DecisionState())
+
+	// Valid participants can still vote and reach a decision.
+	require.NoError(t, pub.ProcessVote(compose.ChainID(1), true))
+	require.NoError(t, pub.ProcessVote(compose.ChainID(2), true))
+	assert.Equal(t, 1, net.decidedCalled)
+	assert.Equal(t, compose.DecisionStateAccepted, pub.DecisionState())
+}
+
 func TestPublisher_AnyFalseDecidesFalseEarly(t *testing.T) {
 	net := &fakePublisherNetwork{}
 	inst := compose.Instance{

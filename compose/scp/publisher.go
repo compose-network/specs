@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	ErrDuplicatedVote = errors.New("duplicated vote")
+	ErrDuplicatedVote       = errors.New("duplicated vote")
+	ErrSenderNotParticipant = errors.New("sender is not a participant")
 )
 
 type PublisherInstance interface {
@@ -98,6 +99,22 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 			Bool("vote", vote).
 			Msg("Ignoring duplicated vote")
 		return ErrDuplicatedVote
+	}
+
+	// Check if sender is part of the instance
+	found := false
+	for _, chainID := range r.chains {
+		if chainID == sender {
+			found = true
+			break
+		}
+	}
+	if !found {
+		r.logger.Info().
+			Uint64("chain_id", uint64(sender)).
+			Bool("vote", vote).
+			Msg("Ignoring vote from non-participant")
+		return ErrSenderNotParticipant
 	}
 
 	r.votes[sender] = vote
