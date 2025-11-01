@@ -101,15 +101,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 		return ErrDuplicatedVote
 	}
 
-	// Check if sender is part of the instance
-	found := false
-	for _, chainID := range r.chains {
-		if chainID == sender {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !r.chainInInstance(sender) {
 		r.logger.Info().
 			Uint64("chain_id", uint64(sender)).
 			Bool("vote", vote).
@@ -156,4 +148,13 @@ func (r *publisherInstance) Timeout() error {
 	r.decisionState = compose.DecisionStateRejected
 	r.network.SendDecided(r.instance.ID, false)
 	return nil
+}
+
+func (r *publisherInstance) chainInInstance(chainID compose.ChainID) bool {
+	for _, cid := range r.chains {
+		if cid == chainID {
+			return true
+		}
+	}
+	return false
 }
