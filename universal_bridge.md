@@ -209,7 +209,7 @@ However, every message in a cross-chain exchange mapping to a single atomic oper
 
 The first 16 bytes serve as version. Currently the only canonical version is 0.
 
-Recommended way of generating `sessionID` on the client side:
+Recommended (optional) way of generating `sessionID` on the client side:
 ```
 (uint256(version) << 240) | (uint256(keccak256(concatenate_bytes(
     sender,  
@@ -342,7 +342,7 @@ event RemoveFromAllowList(address indexed c aller)
 ### Source L2 --- Execution Flow & Pseudocode of Bridge Contract
 
 ### CheckAck
-
+```solidity
 /**
  * @notice Checks for the ACK message in the mailbox and verifies it matches the expected parameters.
  * @dev This function constructs the expected MessageHeader for the ACK, reads the ACK payload from the mailbox,
@@ -388,6 +388,7 @@ function checkAck(
     require(ackTokenSrc == tokenSrc, "ACK tokenSrc mismatch");
     require(ackAmount == amount, "ACK amount mismatch");
 }
+```
 
 ###  `bridgeERC20To`
 
