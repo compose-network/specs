@@ -209,12 +209,14 @@ The first 16 bytes serve as version. Currently the only canonical version is 0.
 
 Recommended way of generating `sessionID`:
 ```
-VERSION | keccak256(abi.encode(  
+(uint256(version) << 240) | (uint256(keccak256(concatenate_bytes(
     sender,  
     nonce,  
     blockNumber,  
-   salt)) << 240
+    salt
+))) >> 16)
 ```
+where sender is 160 bytes, nonce 32 bits, blocknumber is 64 bits, salt is 32 bits.
 
 #### Replay Protection
 
@@ -226,9 +228,10 @@ The `Read` function will return an error if it will be invoked more than once wi
 
 ###  Payload Schema
 
-The bridge supports 2 payload types that have the following labels on the *Mailbox*:
+The bridge supports 3 payload types that have the following labels on the *Mailbox*:
 
-- `SEND`
+- `SEND_TOKENS`
+- `SEND_ETH`
 - `ACK`
 
 #### SEND Payload
@@ -244,6 +247,9 @@ All `SEND` payloads use a single canonical ABI encoding:
 
 #### ACK payload:
 
+    2 options:
+    - `{"y"}` for happy flow
+    - `{"n"}` for failu
     Just empty `{}`. The ACK message should just be present. If it is missing the bridge reverts.
 
 ------------------------------------------------------------------------
@@ -413,7 +419,7 @@ function receiveTokens(
     bytes memory m = mailbox.read(MessageHeader(sessionIDchainSrc, receiver, sessionId, "SEND_TOKEN");
     if (m.length == 0) revert("No SEND_TOKEN message");
 
-    uint256 rmoteChainID;
+    uint256 remoteChainID;
     address remoteAsset;
 
     (remoteChainID, remoteAsset, amount) =
@@ -437,6 +443,8 @@ function receiveTokens(
     return (token, amount);
 }
 ```
+
+
 
 
 ----
@@ -552,6 +560,13 @@ The `finalizeBridgeERC20` and `initiateBridgeERC20` calls in the birdge must be 
 
 The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
 
+`OptimismPortal` utilizes the [OPSuccinct design](https://succinctlabs.github.io/op-succinct/architecture.html#op-succinct-design) with the following changes:
+1. It also deposits tokens to an `ERC20LockBox` (TODO: spec it?)
+2. It is universal across chains and should be owned by neutral actor.
+2. [TODO move validation rule from settlement doc]
+3. [TODO describe withdrawal logic]
+
+As a result of the addition of `ERC20LockBox` the bridge contract on L1 shouldn't lock tokens.
 
 ## L1<->L2 bridge for External rollups
 
@@ -559,7 +574,7 @@ Currently Op-Succinct Sequencers pick up `TransactionDeposited` Events to relay 
 They check the address of the contract that originated the event. And perform a ZK proof that the event was included in the `recieptsRoot`.
 
 In the case of an external rollup, a malicious wrapped sequencer may send a non backed log. This won't be ZK proven but it will still become part of the external rollup canonical state. 
-The result will be that the connection with the Universal Shared Bridge will be severed. The remedy for this is to have our bridge re-utilize the rollup's canonical `CrossDomainSequencer` and `OptimismPortal`
+The result will be that the connection with the Universal Shared Bridge will be severed. The remedy for this is to have our bridge re-utilize the rollup's canonical `CrossDomainSequencer` and `OptimismPortal`.
 
 
 ### ERC-20
@@ -568,6 +583,10 @@ The result will be that the connection with the Universal Shared Bridge will be 
 
 One needs to create `L1ComposeBridge.sol` that will live alongside the canonical `L1StandardBridge.sol`. It will use the canonical `L1CrossDomainMessenger`. For deposits of ERC20, use the same `initiateBridgeERC20` function as for native rollups. The `otherBridge` parameter should now point to the new `L2ComposeBridgeERC20.sol`. On the receiving side, within `L2ComposeBridgeERC20.sol`, the `finalizeBridgeERC20` function mints the wrapped `ComposeableERC20` tokens. Security is ensured by using the `onlyOtherBridge` modifier, together with the canonical `L2CrossDomainMessenger`.
 
+
+
+
+
 ```mermaid
 flowchart TD
     User[User]
@@ -575,9 +594,15 @@ flowchart TD
     L1XDM[L1CrossDomainMessenger]
     L2XDM[L2CrossDomainMessenger]
     L2CB[L2ComposeBridgeERC20]:::compose
+    ETHLB[ETHLockBox]:::compose-universal
+    ERC20LB[ERC20LockBox]:::compose-universal
+    CP[ComposePortal]:::compose-universal
     User -->|initiateBridgeERC20| L1CB
     L1CB -->|sendMessage| L1XDM
-    L1XDM -->|depositTransaction| OptimismPortal
+    L1CB -->|depositTransaction + value| CP
+    CP -->|LockETH| ETHLB
+    CP -->|LockERC20| ERC20LB
+    L1XDM -->|depositTransaction + data | OptimismPortal
     OptimismPortal -->|TxDeposited event| op-node
     op-node -->|deposit| op-geth
     op-geth -->|relayMessage| L2XDM
@@ -585,17 +610,24 @@ flowchart TD
     L2CB -->|mint ComposeableERC20| User
 
     classDef compose fill:#ffd580,stroke:#b17600,stroke-width:2px;
+    classDef compose-universal fill:#ffe14d,stroke:#b17600,stroke-width:2px;
 ```
+
+*Note: The components colored in yellow are custom compose contracts. The components in yellow are custom and universal. The components colored in purple belong to the external rollup's canonical deployment.*
 
 **Key message flow:**
 - User triggers deposit on `L1ComposeBridge`
 - Message is sent through the canonical `L1CrossDomainMessenger`
+- Message is forwarded to `ComposePortal` that farther locks the ETH or tokens in the correct lockbox. 
 - Message forwarded it to `OptimismPortal` that creates a `TxDeposited` event observed by `op-node`.
 - Via a deposit transaction, message is received on L2 by `L2ComposeBridgeERC20` via the canonical `L2CrossDomainMessenger`
 - `L2ComposeBridgeERC20` mints the wrapped tokens using `finalizeBridgeERC20`
 - Security is enforced via `onlyOtherBridge` and the canonical messenger addresses
 
-*Note: The Compose bridges (`L1ComposeBridge`, `L2ComposeBridgeERC20`) are the components that differ from the canonical flow.*
+
+
+
+
 
 
 
@@ -644,3 +676,10 @@ flowchart TD
 ### ETH
 
 Similar to ERC-20, but should *always* be used with a `ComposeableERC20` conversion when bridged from either direction.
+
+
+## TODO 
+- [x] location of ethlockbox on external rollups
+- [] ensure events and logic on transfer ETH
+- [] pass metadata
+- [] native minting
