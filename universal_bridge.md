@@ -199,6 +199,8 @@ interface IMailbox {
 
 Only the canonical bridge contract should be allowed to access `read` and `write` function.
 
+// TODO: should we have an allowList?
+
 
 #### SessionID
 
@@ -207,7 +209,7 @@ However, every message in a cross-chain exchange mapping to a single atomic oper
 
 The first 16 bytes serve as version. Currently the only canonical version is 0.
 
-Recommended way of generating `sessionID`:
+Recommended way of generating `sessionID` on the client side:
 ```
 (uint256(version) << 240) | (uint256(keccak256(concatenate_bytes(
     sender,  
@@ -234,7 +236,7 @@ The bridge supports 3 payload types that have the following labels on the *Mailb
 - `SEND_ETH`
 - `ACK`
 
-#### SEND Payload
+#### SEND Payloads
 
 All `SEND` payloads use a single canonical ABI encoding:
 
@@ -247,10 +249,8 @@ All `SEND` payloads use a single canonical ABI encoding:
 
 #### ACK payload:
 
-    2 options:
-    - `{"y"}` for happy flow
-    - `{"n"}` for failu
-    Just empty `{}`. The ACK message should just be present. If it is missing the bridge reverts.
+    - `abi.encode(tokenAddress, amount)` for successful operation
+    - `{}` for failure
 
 ------------------------------------------------------------------------
 
@@ -321,6 +321,7 @@ function receiveETH(
 ------------------------------------------------------------------------
 
 ### Events
+TODO: remove all events and emissions since they are not an integral part of spec
 
 ``` solidity
 event TokensLocked(address indexed token, address indexed sender, uint256 amount);
@@ -338,7 +339,56 @@ event RemoveFromAllowList(address indexed c aller)
 
 ------------------------------------------------------------------------
 
-### Source L2 --- Execution Flow & Pseudocode
+### Source L2 --- Execution Flow & Pseudocode of Bridge Contract
+
+### CheckAck
+
+/**
+ * @notice Checks for the ACK message in the mailbox and verifies it matches the expected parameters.
+ * @dev This function constructs the expected MessageHeader for the ACK, reads the ACK payload from the mailbox,
+ *      and ensures the returned payload matches the expected token address and amount.
+ *      Reverts if the ACK is missing or contains unexpected data.
+ * @param sessionID The session identifier for the bridging operation.
+ * @param ackChainSrc The chain ID where the ACK message originated (source chain).
+ * @param ackReciever The address expected as the receiver in the ACK.
+ * @param ackSender The address expected as the sender in the ACK.
+ * @param tokenSrc The ERC20 token address sent in the bridging operation.
+ * @param amount The amount of tokens bridged and expected to be confirmed by the ACK.
+ */
+function checkAck(
+    uint256 sessionID,
+    uint256 ackChainSrc,
+    address ackReciever,
+    address ackSender,
+    address tokenSrc,
+    uint256 amount
+) private {
+    // Construct expected MessageHeader for the ACK
+    MessageHeader memory ackHeader = MessageHeader({
+        sessionId: sessionID,
+        chainSrc: ackChainSrc,
+        chainDest: block.chainid,
+        sender: ackSender,
+        receiver: ackReciever,
+        label: "ACK"
+    });
+
+    // Read ACK payload from mailbox
+    bytes memory ackPayload = mailbox.read(ackHeader);
+
+    if (ackPayload.length == 0) {
+        revert("Unsuccessful operation");
+    }
+
+    // The payload is expected to contain abi.encode(address tokenSrc, uint256 amount).
+    require(ackPayload.length == 32 + 32, "ACK payload malformed");
+
+    (address ackTokenSrc, uint256 ackAmount) = abi.decode(ackPayload, (address, uint256));
+
+    require(ackTokenSrc == tokenSrc, "ACK tokenSrc mismatch");
+    require(ackAmount == amount, "ACK amount mismatch");
+}
+
 ###  `bridgeERC20To`
 
 ``` solidity
@@ -359,7 +409,7 @@ function bridgeERC20To(
 
     mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
     // performs a mailbox read for an "ACK" labeled message.
-    checkAck(chainDest, sessionID)
+    checkAck(sessionID, chainDest, receiver, sender, tokenSrc, amount)
 
     emit MailboxWrite(chainDest, receiver, sessionId, "SEND_TOKEN");
 
@@ -390,7 +440,7 @@ function bridgeCETTo(
     bytes memory payload = abi.encode(remoteChainID, remoteAsset, amount);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
-    checkAck(chainDest, sessionID)
+    checkAck(sessionID, chainDest, receiver, sender, cetTokenSrc, amount)
 
     emit MailboxWrite(chainDest, receiver, sessionId, "SEND_TOKEN");
 
@@ -437,7 +487,20 @@ function receiveTokens(
     }
 
     // 3) ACK back to source
-    mailbox.write(chainSrc, sender, sessionId, "ACK", abi.encode({}));
+    MessageHeader memory ackHeader = MessageHeader({
+        sessionId: msgHeader.sessionId,
+        chainSrc: msgHeader.chainDest,
+        chainDest: msgHeader.chainSrc,
+        sender: msgHeader.receiver,
+        receiver: msgHeader.sender,
+        label: "ACK"
+    });
+    Message memory ack = Message({
+        header: ackHeader
+        bytes: abi.encode(token.address, amount)
+    })
+
+    mailbox.write(ack);
 
     emit TokensReceived(token, amount);
     return (token, amount);
@@ -475,7 +538,7 @@ function bridgeEthTo(
         payload
     );
 
-    checkAck(chainDest, sessionID)
+    checkAck(sessionID, chainDest, receiver, msg.sender, address(0), amount)
     emit ETHBridged(chainID, msg.sender, to, msg.value, sessionId, keccak256(abi.encodePacked(chainID, to, sessionId, "SEND_ETH")));
 }
 
@@ -509,14 +572,21 @@ function receiveETH(
     // Release ETH from the ETHLiquidity pool to the receiver
     ETHLiquidity.withdraw(msg.sender, amount);
 
-    // Write ACK back to the source
-    mailbox.write(
-        msgHeader.chainSrc,
-        msgHeader.receiver,
-        msgHeader.sessionId,
-        "ACK",
-        abi.encode({})
-    );
+    // 3) ACK back to source
+    MessageHeader memory ackHeader = MessageHeader({
+        sessionId: msgHeader.sessionId,
+        chainSrc: msgHeader.chainDest,
+        chainDest: msgHeader.chainSrc,
+        sender: msgHeader.receiver,
+        receiver: msgHeader.sender,
+        label: "ACK"
+    });
+    Message memory ack = Message({
+        header: ackHeader
+        bytes: abi.encode(address(0), amount)
+    })
+
+    mailbox.write(ack);
 
     emit ETHReceived(msg.sender, amount);
     emit MailboxAckWrite(msgHeader.chainSrc, msgHeader.receiver, msgHeader.sessionId, "ACK");
@@ -680,6 +750,7 @@ Similar to ERC-20, but should *always* be used with a `ComposeableERC20` convers
 
 ## TODO 
 - [x] location of ethlockbox on external rollups
-- [] ensure events and logic on transfer ETH
+- [x] ensure events and logic on transfer ETH
 - [] pass metadata
 - [] native minting
+
