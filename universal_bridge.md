@@ -238,12 +238,15 @@ The bridge supports 3 payload types that have the following labels on the *Mailb
 
 #### SEND Payloads
 
-All `SEND` payloads use a single canonical ABI encoding:
+`SEND_TOKENS` payloads use a single canonical ABI encoding:
 
     abi.encode(
       uint256 remoteChainID  // The native chain of the transferred asset
       address remoteAsset,   // canonical asset address on the escrow chain
       uint256 amount         // amount
+      string  name           // metadata
+      string symbol          // metadata
+      uint8 decimals         // metadata
     )
 
 
@@ -406,7 +409,10 @@ function bridgeERC20To(
     IERC20(tokenSrc).transferFrom(sender, address(this), amount);
     emit TokensLocked(tokenSrc, sender, amount);
 
-    bytes memory payload = abi.encode(block.chainid, tokenSrc, amount);
+    string memory name = ERC20(tokenSrc).name();
+    string memory symbol = ERC20(tokenSrc).symbol();
+    uint8 decimals = ERC20(tokenSrc).decimals();
+    bytes memory payload = abi.encode(block.chainid, tokenSrc, amount, name, symbol, decimals);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
     // performs a mailbox read for an "ACK" labeled message.
@@ -434,11 +440,12 @@ function bridgeCETTo(
     ICET(cetTokenSrc).crossChainburn(sender, amount);
     emit CETBurned(cetTokenSrc, sender, amount);
 
-    address remoteAsset = ICET(cetTokenSrc).remoteAsset(); 
     uint256 remoteChainID = ICET(cetTokenSrc).remoteChainID();
-
-
-    bytes memory payload = abi.encode(remoteChainID, remoteAsset, amount);
+    address remoteAsset = ICET(cetTokenSrc).remoteAsset(); 
+    string memory name = ICET(cetTokenSrc).name();
+    string memory symbol = ICET(cetTokenSrc).symbol();
+    uint8 decimals = ICET(cetTokenSrc).decimals();
+    bytes memory payload = abi.encode(remoteChainID, remoteAsset, amount, name, symbol, decimals);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
     checkAck(sessionID, chainDest, receiver, sender, cetTokenSrc, amount)
@@ -457,10 +464,6 @@ function bridgeCETTo(
 function receiveTokens(
     MessageHeader msgHeader
     // the following parameters are only needed if the proper CET token wasn't deployed
-    // TODO: should they be part of the message?
-    string calldata name,
-    string calldata symbol,
-    uint8 decimals
 ) external returns (address token, uint256 amount) {
     require(msg.sender == msgHeader.receiver, "Only receiver can claim");
     require(msgHeader.chainDest == block.chainid, "Wrong destination chain");
@@ -473,8 +476,8 @@ function receiveTokens(
     uint256 remoteChainID;
     address remoteAsset;
 
-    (remoteChainID, remoteAsset, amount) =
-        abi.decode(m, (uint256, address, uint256));
+    (remoteChainID, remoteAsset, amount, name, symbol, decimals) =
+        abi.decode(m, (uint256, address, uint256, string, string, uint8));
 
 
     // 2) RELEASE if native token is hosted & escrowed here, else MINT BCT
@@ -484,6 +487,7 @@ function receiveTokens(
         token = native;
     } else {
         // Mint deterministic CET on this chain
+        // Metadata is useful in case CET token not yet deployed.
         token = ensureCETAndMint(remoteAddress, name, symbol, decimals, msgHeader.receiver, amount)
     }
 
