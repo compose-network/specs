@@ -18,55 +18,10 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 11. **Inter-L2 Fast Path:** For **L2↔L2** transfers, the destination **mints on receipt of a bridge message** (no proof verification at claim time). **Later settlement** is done simultaneously via aggregated proofs (out of scope here).
 12. **TODO:** Allow token owner to have the bridge mint native token on specified conditions.
 
+---
+# ComposeableERC20
 
-___
-
-# L2↔L2 Bridge --- Sessioned Mailbox Flow
-
-
-### Entities & Contracts
-
--  **ComposableERC20**
-    An ERC20 wrapper native to the bridge.
-
--   **ComposeL2ToL2Bridge (per L2)**
-    Handles: locking native ERC-20, burning CET, mailbox write/read, and
-    minting (via token's `onlyBridge` gate when called from the bridge
-    context).
-
-    It should be deployed with CREATE2 so it has the same address on all chains.
-
--   **Mailbox (per L2)**
-    Minimal append-only message bus with read-once semantics per
-    `(chainSrc, recipient, sessionId, label)`.
-
-    -   `write(chainId, account, sessionId, label, payload)`\
-    -   `read(chainId, account, sessionId, label) → bytes`
-        (consumes/marks delivered)
-
--   **Supported Token types**
-
-    -   **Native ERC-20** on an L2 (not minted by bridge).
-    -   **CET** (ComposeableERC20Token) --- canonical L2 representation
-        of L1/L2 asset.
-        -   `mint`/`burn` are **restricted** to `msg.sender == Bridge`.
-
--   **Deterministic CET Addresses (Superchain-style)**
-    Each CET contract is deployed **at the same address across all OP
-    L2s**, deterministically derived from the L1 canonical asset address using CREATE2.
-
-    -   This eliminates the need for a per-chain registry.
-    -   Mailbox payloads only need to carry the **`remoteToken` address**.
-    -   On the destination chain, the bridge deterministically computes
-        the CET address and mints to the receiver.
-
-    **TODO** More details?
-
-------------------------------------------------------------------------
-
-##  ComposeableERC20
-
-Inspired by `OptimismSuperChainERC20`, this is an ERC7802 compliant token for cross-chain transfers.
+ An ERC20 wrapper native to the bridge. Inspired by `OptimismSuperChainERC20`, this is an ERC7802 compliant token for cross-chain transfers.
 The code snippet below describe the main functionality.
 
 ```solidity
@@ -108,7 +63,13 @@ abstract contract ComposeableERC20 is ERC20, IERC7802 {
 
 ### Minting CET on the fly
 
-The bridge can mint CETs on demand via a factory
+Each CET contract is deployed **at the same address across all participating L2s**, deterministically derived from the L1 canonical asset address using CREATE2.
+
+-   This eliminates the need for a per-chain registry for each specific token.
+-   Mailbox payloads only need to carry the **`remoteToken` address**.
+-   On the destination chain, the bridge deterministically computes
+    the CET address and mints to the receiver.
+
 
 ```solidity
 interface ICETFactory {
@@ -141,7 +102,7 @@ function ensureCETAndMint(
     // 1) Predict deterministic address
     address predicted = computeCETAddress(remoteAsset);
 
-    // 2) Deploy if missing (CREATE3-based factory)
+    // 2) Deploy if missing (CREATE2-based factory)
     cet = cetFactory.deployIfAbsent(remoteAsset, decimals, name, symbol, address(this));
     require(cet == predicted, "CET address mismatch");
 
@@ -150,8 +111,34 @@ function ensureCETAndMint(
     return cet;
 }
 ```
+___
 
--------------
+# L2↔L2 Bridge
+
+
+### Entities & Contracts
+-   **ComposeL2ToL2Bridge (per L2)**
+    Handles: locking native ERC-20, burning CET, mailbox write/read, and
+    minting (via token's `onlyBridge` gate when called from the bridge
+    context).
+
+    It should be deployed with CREATE2 so it has the same address on all chains.
+
+-   **Mailbox (per L2)**
+    Minimal append-only message bus with read-once semantics per
+    `(chainSrc, recipient, sessionId, label)`.
+
+    -   `write(chainId, account, sessionId, label, payload)`\
+    -   `read(chainId, account, sessionId, label) → bytes`
+        (consumes/marks delivered)
+
+-   **Supported Token types**
+
+    -   **Native ERC-20** on an L2 (not minted by bridge).
+    -   **CET** (ComposeableERC20Token) --- canonical L2 representation
+        of L1/L2 asset.
+        -   `mint`/`burn` are **restricted** to `msg.sender == Bridge`.
+
 
 ###  Mailbox
 
@@ -180,34 +167,28 @@ interface IMailbox {
     // `sender` writes to the OUTBOX a message to be relayed to `reciever` on `chainDest`
     function write(
         Message calldata message
-    ) external;
+    ) external onlyBridge;
 
     // `receiver` reads from the INBOX a message relayed by `sender` from `srcChain`
     function read(
         MessageHeader calldata header
-    ) external returns (bytes memory);
+    ) external onlyBridge returns (bytes memory);
 
-    // Enable `allowedCaller` to invoke `read` and `write`
-    function addToAllowList(address calldata allowedCaller
-    ) external onlyOwner 
-
-    // remove from allowlist
-    function removeFromAllowList(address calldata caller
-    ) external onlyOwner 
+    // `coordinator` relays a message written to another chain's outbox
+    function putInbox(
+        Message calldata message
+    ) external onlyCoordinator
 }
 ```
 
 Only the canonical bridge contract should be allowed to access `read` and `write` function.
-
-// TODO: should we have an allowList?
-
+A special account called the `coordinator` can help realying those messages across chains.
 
 #### SessionID
 
-SessionID is a 240 bits random value that MUST NOT be reused across MessageHeaders with otherwise similar values.
-However, every message in a cross-chain exchange mapping to a single atomic operation must carry the same SessionID.
+A session begins with a payload baring message from chain *A* to chain *B* and ends with an ACK message from chain *B* to chain *A*. It always consists of only those two messages.
 
-The first 16 bytes serve as version. Currently the only canonical version is 0.
+`SessionID` is a 256 bit variable where the first 16 bits are used for version and the last 240 bits are the session identifier. It should always be unique for each session.
 
 Recommended (optional) way of generating `sessionID` on the client side:
 ```
@@ -671,7 +652,7 @@ flowchart TD
     L2CB[L2ComposeBridgeERC20]:::compose
     ETHLB[ETHLockBox]:::compose-universal
     ERC20LB[ERC20LockBox]:::compose-universal
-    CP[ComposePortal]:::compose-universal
+    CP[ComposePortal]:::compose
     User -->|initiateBridgeERC20| L1CB
     L1CB -->|sendMessage| L1XDM
     L1CB -->|depositTransaction + value| CP
@@ -690,7 +671,7 @@ flowchart TD
 
 *Note: The components colored in yellow are custom compose contracts. The components in yellow are custom and universal. The components colored in purple belong to the external rollup's canonical deployment.*
 
-**Key message flow:**
+##### Key message flow
 - User triggers deposit on `L1ComposeBridge`
 - Message is sent through the canonical `L1CrossDomainMessenger`
 - Message is forwarded to `ComposePortal` that farther locks the ETH or tokens in the correct lockbox. 
@@ -700,11 +681,83 @@ flowchart TD
 - Security is enforced via `onlyOtherBridge` and the canonical messenger addresses
 
 
+##### Revised `initiateBridgeERC20 function
+
+If token isn't CET than don't lock it on the bridge. Forward it for locking on the new `ComposePortal` via direct call to 
+`depositTransaction`. It should be invoked the same way the `L1CrossDomainMessenger` invokes the call to `OptimismPortal` 
+with the addition of an actual ERC-20 transfer. If it is a CET token it can be burned and minted by the bridge as usual. 
+Should call `SendMessage` on the canonical messenger as usual.
+
+```solidity
+/// @notice Sends ERC20 tokens to a receiver's address on the other chain via the universal compose bridge flow.
+/// @param _localToken  Address of the ERC20 on this chain.
+/// @param _remoteToken Address of the corresponding token on the remote chain.
+/// @param _from        Address of the sender.
+/// @param _to          Address of the receiver.
+/// @param _amount      Amount of local tokens to deposit.
+/// @param _minGasLimit Minimum amount of gas that the bridge can be relayed with.
+/// @param _extraData   Extra data to be sent with the transaction.
+function _initiateBridgeERC20(
+    address _localToken,
+    address _remoteToken,
+    address _from,
+    address _to,
+    uint256 _amount,
+    uint32 _minGasLimit,
+    bytes memory _extraData
+)
+    internal
+{
+    require(msg.value == 0, "ComposeBridge: cannot send value");
+
+    if (_isComposeableERC20(_localToken)) {
+        // For CET tokens (ComposeableERC20), burn and mint as usual.
+        require(
+            _isCorrectTokenPair(_localToken, _remoteToken),
+            "UniversalBridge: wrong remote token for ComposeableERC20"
+        );
+
+        IComposeableERC20(_localToken).burn(_from, _amount);
+    } else {
+        // For non-CET tokens, forward the deposit via the ComposePortal 
+        // using depositTransaction, which locks the token in a lockbox.
+        IERC20(_localToken).safeTransferFrom(_from, address(composePortal), _amount);
+        IERC20(_localToken).approve(address(composePortal), _amount);
+
+        composePortal.depositTransaction(
+            _localToken,
+            _from,
+            _to,
+            _amount,
+            _extraData
+        );
+    }
+
+    // Emit the correct bridge event.
+    _emitERC20BridgeInitiated(_localToken, _remoteToken, _from, _to, _amount, _extraData);
+
+    // Send canonical cross-domain message to the remote bridge as usual.
+    messenger.sendMessage({
+        _target: address(otherBridge),
+        _message: abi.encodeWithSelector(
+            this.finalizeBridgeERC20.selector,
+            _remoteToken,
+            _localToken,
+            _from,
+            _to,
+            _amount,
+            _extraData
+        ),
+        _minGasLimit: _minGasLimit
+    });
+}
+```
 
 
 
+##### New ComposePortal
 
-
+Has the same logic as `OptimismPortal` but also locks ERC20s in a lockbox. 
 
 
 #### Withdrawals
@@ -721,21 +774,22 @@ flowchart TD
     L2CB[L2ComposeBridge]:::compose
     L2XDM[L2CrossDomainMessenger]
     ComposePortal[ComposePortal]:::compose
-    OutputOracle[L2 OutputOracle]
-    DisputeGame[OPSuccinctDisputeGame]
+    SP[Shared Publisher]:::compose-universal
+    DisputeGame[ComposeValidityDisputeGame]:::compose-universal
     L1XDM[L1CrossDomainMessenger]
     L1CB[L1ComposeBridge]:::compose
 
     User -->|initiateWithdrawal / bridgeERC20| L2CB
     L2CB -->|sendMessage| L2XDM
-    L2XDM -->|initiate withdrawal process| ComposePortal
-    OutputOracle -->|feeds state root & proof| DisputeGame
+    L2XDM -->|burns tokens| END
+    SP -->|feeds state root & proof| DisputeGame
     ComposePortal -->|prove withdrawal via DisputeGame| DisputeGame
     DisputeGame -->|withdrawal proven| ComposePortal
     ComposePortal -->|sendMessage| L1XDM
     L1XDM -->|finalizeBridgeERC20| L1CB
 
     classDef compose fill:#ffd580,stroke:#b17600,stroke-width:2px;
+    classDef compose-universal fill:#ffe14d,stroke:#b17600,stroke-width:2px;
 ```
 
 **Key message flow:**
@@ -756,6 +810,7 @@ Similar to ERC-20, but should *always* be used with a `ComposeableERC20` convers
 ## TODO 
 - [x] location of ethlockbox on external rollups
 - [x] ensure events and logic on transfer ETH
-- [] pass metadata
+- [x] pass metadata
 - [] native minting
+- [] bApp handling of rebasing tokens
 
