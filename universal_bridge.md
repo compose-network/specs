@@ -16,7 +16,7 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 9. **Exit Logic (proof-based paths):** Use the **same exit logic as OP-Succinct**: prove claims against a chain’s **post root**, then an **MPT/storage proof** to the chain’s **Outbox/Exit root**, then a **Merkle inclusion** for the exit record.  
 10. **Replay Protection:** Messages can be consumed only once. Any replay will be ignored.  
 11. **Inter-L2 Fast Path:** For **L2↔L2** transfers, the destination **mints on receipt of a bridge message** (no proof verification at claim time). **Later settlement** is done simultaneously via aggregated proofs (out of scope here).
-12. Allow token owner to have the bridge mint native token on specified conditions.
+12. **Native token support**: If a CoreComposeable (ICET-compatible native token) exists for the asset on a destination chain, the bridge mints to it; otherwise it deploys a WrappedComposeable and mints there. Holders can later redeem WrappedCET into CoreComposeable on that chain via the bridge.
 
 ---
 # ComposeableERC20
@@ -25,7 +25,15 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 The code snippet below describe the main functionality.
 
 ```solidity
-abstract contract ComposeableERC20 is ERC20, IERC7802 {
+interface ICET is ERC20, IERC7802 {
+    /// @notice Returns the remote chain ID where this token was originally minted.
+    function getRemoteChainID() external view returns (uint256);
+
+    /// @notice Returns the remote asset address corresponding to this token on the remote chain.
+    function getRemoteAsset() external view returns (address);
+}
+
+abstract contract ComposeableERC20 is ICET {
     /// @param _to     Address to mint tokens to.
     /// @param _amount Amount of tokens to mint.
     function crosschainMint(address _to, uint256 _amount) external {
@@ -45,52 +53,60 @@ abstract contract ComposeableERC20 is ERC20, IERC7802 {
 
         emit CrosschainBurn(_from, _amount, msg.sender);
     }
-    
-       /// @notice Storage struct for the BridgedComposeTokenERC20 metadata.
-    struct BridgedComposeTokenERC20Metadata {
-        /// @notice The ChainID where this token was originally minted.
-        uint256 remoteChainID
-        /// @notice Address of the corresponding version of this token on the remote chain.
-        address remoteAsset;
-        /// @notice Name of the token
-        string name;
-        /// @notice Symbol of the token
-        string symbol;
-        /// @notice Decimals of the token
-        uint8 decimals;
-    }
 ```
 
-### Minting CET on the fly
+### Composeable Flavors and Addressing
 
-Each CET contract is deployed **at the same address across all participating L2s**, deterministically derived from the L1 canonical asset address using CREATE2.
+There are two flavors of ComposeableERC20 implementations that satisfy the `ICET` interface:
+- `CoreComposeable`: a native token implementation that integrates the CET cross-chain gates. Deployed and owned by the original token owner. Local `mint`/`burn` are owner-gated; `crossChainMint`/`crossChainBurn` are bridge-gated. `getRemoteChainID()` should return the current chain ID and `getRemoteAsset()` should simply return the current deployed token address. Since `CoreComposeable` are canonical representation of the token.
+- `WrappedComposeable` (WrappedCET): a bridge-deployed wrapper used when no CoreComposeable exists on the destination chain, or if on the source chain the bridged token isn't `ICET` compatible.
 
--   This eliminates the need for a per-chain registry for each specific token.
--   Mailbox payloads only need to carry the **`remoteToken` address**.
--   On the destination chain, the bridge deterministically computes
-    the CET address and mints to the receiver.
+All `ICET` contract implementation are always deployed at the same address across chains via CRATE2.
 
 
 ```solidity
-interface ICETFactory {
-    function predictAddress(address canonicalAsset) external view returns (address predicted);
+
+interface ICETFactory { // Bridge-side: deploys WrappedComposeable
+    function predictAddress(address remoteAsset) external view returns (address predicted);
     function deployIfAbsent(
-        address canonicalAsset,
+        address remoteAsset,
         uint256 remoteChain,
         uint8 decimals,
         string calldata name,
-        string calldata symbol,
+        string calldata symbol
     ) external onlyBridge returns (address deployed);
-    // Salt derivation for deterministic addresses  
-    function computeSalt(address canonicalAsset) external pure returns (bytes32);
+    function computeSalt(address remoteAsset) external pure returns (bytes32);
 }
 
-ICETFactory public cetFactory;
+ICETFactory  public cetFactory;    // deployer/predictor for WrappedComposeable
 
 function computeCETAddress(address remoteAsset) internal view returns (address) {
     return cetFactory.predictAddress(remoteAsset);
 }
+```
 
+### Wrapped CET Redemption (local conversion)
+
+```solidity
+/// @notice Convert WrappedComposeable (bridge wrapper) into CoreComposeable on the same chain.
+/// @dev Burns wrapped via crossChainBurn and mints core via crossChainMint to the caller.
+function redeemWrappedCET(
+    address wrappedCET,
+    address coreCET,
+    uint256 amount
+) external {
+    require(wrappedCET != address(0) && coreCET != address(0), "zero address");
+    // Optional: ensure both map to the same remote/canonical asset metadata
+    // require(ICET(wrappedCET).remoteAsset() == ICET(coreCET).remoteAsset(), "asset mismatch");
+    // Burn wrapped and mint core using bridge-only cross-chain gates
+    ICET(wrappedCET).crossChainBurn(msg.sender, amount);
+    ICET(coreCET).crossChainMint(msg.sender, amount);
+    emit WrappedCETRedeemed(wrappedCET, coreCET, msg.sender, amount);
+}
+```
+
+### Minting CET on the fly
+```solidity
 function ensureCETAndMint(
     address remoteAsset,
     uint256 remoteChain
@@ -100,15 +116,19 @@ function ensureCETAndMint(
     address to,
     uint256 amount
 ) internal returns (address cet) {
-    // 1) Predict deterministic address
-    address predicted = computeCETAddress(remoteAsset);
+    // 1) If a CoreComposeable is already deployed for this asset, mint there
+    if (remoteAsset.code.length > 0 && isCoreComposeable(remoteAsset)) {
+        ICET(remoteAsset).crossChainMint(to, amount);
+        return remoteAddress;
+    }
 
-    // 2) Deploy if missing (CREATE2-based factory)
+    // 2) Otherwise, deploy or use the WrappedComposeable at its deterministic address
+    address predicted = computeCETAddress(remoteAsset);
     cet = cetFactory.deployIfAbsent(remoteAsset, remoteChain, decimals, name, symbol);
     require(cet == predicted, "CET address mismatch");
 
-    // 3) Mint via bridge-only path
-    IToken(cet).mint(to, amount);
+    // 3) Cross-chain mint via bridge-only path on the wrapper
+    ICET(cet).crossChainMint(to, amount);
     return cet;
 }
 ```
@@ -397,7 +417,7 @@ function bridgeCETTo(
 ) external {
     address sender = msg.sender;
 
-    ICET(cetTokenSrc).crossChainburn(sender, amount);
+    ICET(cetTokenSrc).crossChainBurn(sender, amount);
     emit CETBurned(cetTokenSrc, sender, amount);
 
     uint256 remoteChainID = ICET(cetTokenSrc).remoteChainID();
@@ -440,15 +460,15 @@ function receiveTokens(
         abi.decode(m, (uint256, address, uint256, string, string, uint8));
 
 
-    // 2) RELEASE if native token is hosted & escrowed here, else MINT BCT
+    // 2) RELEASE if native token is hosted & escrowed here, else MINT Composeable (Core if present, else WrappedCET)
     if remoteChainID == block.chainid && IERC20(remoteAddress).balanceOf(address(this)) >= amount) {
         // Release escrowed native tokens
         require(IERC20(native).transfer(receiver, amount), "Native release failed");
         token = native;
     } else {
-        // Mint deterministic CET on this chain
-        // Metadata is useful in case CET token not yet deployed.
-        token = ensureCETAndMint(remoteAddress, remoteChainId, name, symbol, decimals, amount)
+        // Mint deterministic Composeable on this chain
+        // Metadata is useful in case WrappedCET not yet deployed.
+        token = ensureCETAndMint(remoteAddress, remoteChainId, name, symbol, decimals, receiver, amount)
     }
 
     // 3) ACK back to source
@@ -790,4 +810,3 @@ Similar to ERC-20, but should *always* be used with a `ComposeableERC20` convers
 - [x] pass metadata
 - [] native minting
 - [] bApp handling of rebasing tokens
-
