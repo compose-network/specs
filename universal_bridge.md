@@ -16,7 +16,7 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 9. **Exit Logic (proof-based paths):** Use the **same exit logic as OP-Succinct**: prove claims against a chain’s **post root**, then an **MPT/storage proof** to the chain’s **Outbox/Exit root**, then a **Merkle inclusion** for the exit record.  
 10. **Replay Protection:** Messages can be consumed only once. Any replay will be ignored.  
 11. **Inter-L2 Fast Path:** For **L2↔L2** transfers, the destination **mints on receipt of a bridge message** (no proof verification at claim time). **Later settlement** is done simultaneously via aggregated proofs (out of scope here).
-12. **TODO:** Allow token owner to have the bridge mint native token on specified conditions.
+12. Allow token owner to have the bridge mint native token on specified conditions.
 
 ---
 # ComposeableERC20
@@ -73,16 +73,16 @@ Each CET contract is deployed **at the same address across all participating L2s
 
 ```solidity
 interface ICETFactory {
-    function predictAddress(address l1Asset) external view returns (address predicted);
+    function predictAddress(address canonicalAsset) external view returns (address predicted);
     function deployIfAbsent(
-        address l1Asset,
+        address canonicalAsset,
+        uint256 remoteChain,
         uint8 decimals,
         string calldata name,
         string calldata symbol,
-        address bridge
-    ) external returns (address deployed);
+    ) external onlyBridge returns (address deployed);
     // Salt derivation for deterministic addresses  
-    function computeSalt(address l1Asset) external pure returns (bytes32);
+    function computeSalt(address canonicalAsset) external pure returns (bytes32);
 }
 
 ICETFactory public cetFactory;
@@ -93,6 +93,7 @@ function computeCETAddress(address remoteAsset) internal view returns (address) 
 
 function ensureCETAndMint(
     address remoteAsset,
+    uint256 remoteChain
     string calldata name,
     string calldata symbol,
     uint8 decimals,
@@ -103,7 +104,7 @@ function ensureCETAndMint(
     address predicted = computeCETAddress(remoteAsset);
 
     // 2) Deploy if missing (CREATE2-based factory)
-    cet = cetFactory.deployIfAbsent(remoteAsset, decimals, name, symbol, address(this));
+    cet = cetFactory.deployIfAbsent(remoteAsset, remoteChain, decimals, name, symbol);
     require(cet == predicted, "CET address mismatch");
 
     // 3) Mint via bridge-only path
@@ -182,7 +183,7 @@ interface IMailbox {
 ```
 
 Only the canonical bridge contract should be allowed to access `read` and `write` function.
-A special account called the `coordinator` can help realying those messages across chains.
+A special account called the `coordinator` can help relaying those messages across chains.
 
 #### SessionID
 
@@ -447,7 +448,7 @@ function receiveTokens(
     } else {
         // Mint deterministic CET on this chain
         // Metadata is useful in case CET token not yet deployed.
-        token = ensureCETAndMint(remoteAddress, name, symbol, decimals, msgHeader.receiver, amount)
+        token = ensureCETAndMint(remoteAddress, remoteChainId, name, symbol, decimals, amount)
     }
 
     // 3) ACK back to source
