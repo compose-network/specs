@@ -708,13 +708,13 @@ function _initiateBridgeERC20(
     require(msg.value == 0, "ComposeBridge: cannot send value");
 
     if (_isComposeableERC20(_localToken)) {
-        // For CET tokens (ComposeableERC20), burn and mint as usual.
+        // For CET tokens (ComposeableERC20), crossChainBurn/crossChainMint as usual.
         require(
             _isCorrectTokenPair(_localToken, _remoteToken),
             "UniversalBridge: wrong remote token for ComposeableERC20"
         );
 
-        IComposeableERC20(_localToken).burn(_from, _amount);
+        IComposeableERC20(_localToken).crossChainBurn(_from, _amount);
     } else {
         // For non-CET tokens, forward the deposit via the ComposePortal 
         // using depositTransaction, which locks the token in a lockbox.
