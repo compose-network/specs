@@ -107,8 +107,8 @@ function ensureCETAndMint(
     cet = cetFactory.deployIfAbsent(remoteAsset, remoteChain, decimals, name, symbol);
     require(cet == predicted, "CET address mismatch");
 
-    // 3) Mint via bridge-only path
-    IToken(cet).mint(to, amount);
+    // 3) Cross-chain mint via bridge-only path
+    ICET(cet).crossChainMint(to, amount);
     return cet;
 }
 ```
@@ -397,7 +397,7 @@ function bridgeCETTo(
 ) external {
     address sender = msg.sender;
 
-    ICET(cetTokenSrc).crossChainburn(sender, amount);
+    ICET(cetTokenSrc).crossChainBurn(sender, amount);
     emit CETBurned(cetTokenSrc, sender, amount);
 
     uint256 remoteChainID = ICET(cetTokenSrc).remoteChainID();
@@ -688,13 +688,13 @@ function _initiateBridgeERC20(
     require(msg.value == 0, "ComposeBridge: cannot send value");
 
     if (_isComposeableERC20(_localToken)) {
-        // For CET tokens (ComposeableERC20), burn and mint as usual.
+        // For CET tokens (ComposeableERC20), crossChainBurn/crossChainMint as usual.
         require(
             _isCorrectTokenPair(_localToken, _remoteToken),
             "UniversalBridge: wrong remote token for ComposeableERC20"
         );
 
-        IComposeableERC20(_localToken).burn(_from, _amount);
+        IComposeableERC20(_localToken).crossChainBurn(_from, _amount);
     } else {
         // For non-CET tokens, forward the deposit via the ComposePortal 
         // using depositTransaction, which locks the token in a lockbox.
@@ -790,4 +790,3 @@ Similar to ERC-20, but should *always* be used with a `ComposeableERC20` convers
 - [x] pass metadata
 - [] native minting
 - [] bApp handling of rebasing tokens
-
