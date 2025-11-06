@@ -64,8 +64,29 @@ There are two flavors of ComposeableERC20 implementations that satisfy the `ICET
 All `ICET` contract implementation are always deployed at the same address across chains via CRATE2.
 
 
-```solidity
 
+### Wrapped CET Redemption (local conversion)
+
+```solidity
+/// @notice Convert WrappedComposeable (bridge wrapper) into CoreComposeable on the same chain.
+/// @dev Burns wrapped via crossChainBurn and mints core via crossChainMint to the caller.
+function redeemWrappedCET(
+    address wrappedCET,
+    address coreCET,
+    uint256 amount
+) external {
+    require(wrappedCET != address(0) && coreCET != address(0), "zero address");
+    require(ICET(wrappedCET).remoteAsset() == coreCET, "asset mismatch");
+    // Burn wrapped and mint core using bridge-only cross-chain gates
+    ICET(wrappedCET).crossChainBurn(msg.sender, amount);
+    ICET(coreCET).crossChainMint(msg.sender, amount);
+    emit WrappedCETRedeemed(wrappedCET, coreCET, msg.sender, amount);
+}
+```
+
+### Minting CET on the fly
+```solidity
+// Factory for wrapped tokens
 interface ICETFactory { // Bridge-side: deploys WrappedComposeable
     function predictAddress(address remoteAsset) external view returns (address predicted);
     function deployIfAbsent(
@@ -80,33 +101,6 @@ interface ICETFactory { // Bridge-side: deploys WrappedComposeable
 
 ICETFactory  public cetFactory;    // deployer/predictor for WrappedComposeable
 
-function computeCETAddress(address remoteAsset) internal view returns (address) {
-    return cetFactory.predictAddress(remoteAsset);
-}
-```
-
-### Wrapped CET Redemption (local conversion)
-
-```solidity
-/// @notice Convert WrappedComposeable (bridge wrapper) into CoreComposeable on the same chain.
-/// @dev Burns wrapped via crossChainBurn and mints core via crossChainMint to the caller.
-function redeemWrappedCET(
-    address wrappedCET,
-    address coreCET,
-    uint256 amount
-) external {
-    require(wrappedCET != address(0) && coreCET != address(0), "zero address");
-    // Optional: ensure both map to the same remote/canonical asset metadata
-    // require(ICET(wrappedCET).remoteAsset() == ICET(coreCET).remoteAsset(), "asset mismatch");
-    // Burn wrapped and mint core using bridge-only cross-chain gates
-    ICET(wrappedCET).crossChainBurn(msg.sender, amount);
-    ICET(coreCET).crossChainMint(msg.sender, amount);
-    emit WrappedCETRedeemed(wrappedCET, coreCET, msg.sender, amount);
-}
-```
-
-### Minting CET on the fly
-```solidity
 function ensureCETAndMint(
     address remoteAsset,
     uint256 remoteChain
@@ -123,7 +117,7 @@ function ensureCETAndMint(
     }
 
     // 2) Otherwise, deploy or use the WrappedComposeable at its deterministic address
-    address predicted = computeCETAddress(remoteAsset);
+    address predicted = cetFactory.predictAddress(remoteAsset);
     cet = cetFactory.deployIfAbsent(remoteAsset, remoteChain, decimals, name, symbol);
     require(cet == predicted, "CET address mismatch");
 
