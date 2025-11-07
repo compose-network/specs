@@ -1,8 +1,6 @@
 package sbcp
 
-import (
-	"github.com/compose-network/specs/compose"
-)
+import "github.com/compose-network/specs/compose"
 
 type chainRequest struct {
 	chain compose.ChainID
@@ -34,8 +32,8 @@ func makeXTRequest(entries ...chainRequest) compose.XTRequest {
 	return req
 }
 
-// fakeMessenger records broadcasts for assertions.
-type fakeMessenger struct {
+// fakePublisherMessenger records broadcasts for assertions.
+type fakePublisherMessenger struct {
 	startPeriods []struct {
 		P compose.PeriodID
 		T compose.SuperblockNumber
@@ -48,18 +46,18 @@ type fakeMessenger struct {
 	}
 }
 
-func (m *fakeMessenger) BroadcastStartPeriod(p compose.PeriodID, t compose.SuperblockNumber) {
+func (m *fakePublisherMessenger) BroadcastStartPeriod(p compose.PeriodID, t compose.SuperblockNumber) {
 	m.startPeriods = append(m.startPeriods, struct {
 		P compose.PeriodID
 		T compose.SuperblockNumber
 	}{p, t})
 }
 
-func (m *fakeMessenger) BroadcastStartInstance(inst compose.Instance) {
+func (m *fakePublisherMessenger) BroadcastStartInstance(inst compose.Instance) {
 	m.startInstances = append(m.startInstances, inst)
 }
 
-func (m *fakeMessenger) BroadcastRollback(p compose.PeriodID, s compose.SuperblockNumber, h compose.SuperBlockHash) {
+func (m *fakePublisherMessenger) BroadcastRollback(p compose.PeriodID, s compose.SuperblockNumber, h compose.SuperBlockHash) {
 	m.rollbacks = append(m.rollbacks, struct {
 		P compose.PeriodID
 		S compose.SuperblockNumber
@@ -67,19 +65,82 @@ func (m *fakeMessenger) BroadcastRollback(p compose.PeriodID, s compose.Superblo
 	}{p, s, h})
 }
 
-// fakeProver records settlement requests for assertions.
-type fakeProver struct {
+type fakePublisherProver struct {
+	calls []struct {
+		superblock compose.SuperblockNumber
+		hash       compose.SuperBlockHash
+		proofs     [][]byte
+	}
+	nextProof []byte
+	err       error
+}
+
+func (p *fakePublisherProver) RequestNetworkProof(superblockNumber compose.SuperblockNumber, hash compose.SuperBlockHash, proofs [][]byte) ([]byte, error) {
+	copied := make([][]byte, len(proofs))
+	for i, proof := range proofs {
+		copied[i] = append([]byte(nil), proof...)
+	}
+	p.calls = append(p.calls, struct {
+		superblock compose.SuperblockNumber
+		hash       compose.SuperBlockHash
+		proofs     [][]byte
+	}{superblockNumber, hash, copied})
+	if p.err != nil {
+		return nil, p.err
+	}
+	return append([]byte(nil), p.nextProof...), nil
+}
+
+type fakeL1 struct {
+	published []struct {
+		superblock compose.SuperblockNumber
+		proof      []byte
+	}
+}
+
+func (l *fakeL1) PublishProof(superblockNumber compose.SuperblockNumber, proof []byte) {
+	l.published = append(l.published, struct {
+		superblock compose.SuperblockNumber
+		proof      []byte
+	}{superblockNumber, append([]byte(nil), proof...)})
+}
+
+// fakeSequencerProver records settlement requests for assertions.
+type fakeSequencerProver struct {
 	calls []struct {
 		hdr *BlockHeader
 		sb  compose.SuperblockNumber
 	}
+	nextProof []byte
 }
 
-func (p *fakeProver) RequestProofs(hdr *BlockHeader, sb compose.SuperblockNumber) {
+func (p *fakeSequencerProver) RequestProofs(hdr *BlockHeader, sb compose.SuperblockNumber) []byte {
 	p.calls = append(p.calls, struct {
 		hdr *BlockHeader
 		sb  compose.SuperblockNumber
 	}{hdr, sb})
+	return append([]byte(nil), p.nextProof...)
+}
+
+type fakeSequencerMessenger struct {
+	requests []compose.XTRequest
+	proofs   []struct {
+		periodID         compose.PeriodID
+		superblockNumber compose.SuperblockNumber
+		proof            []byte
+	}
+}
+
+func (m *fakeSequencerMessenger) ForwardRequest(request compose.XTRequest) {
+	m.requests = append(m.requests, request)
+}
+
+func (m *fakeSequencerMessenger) SendProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte) {
+	m.proofs = append(m.proofs, struct {
+		periodID         compose.PeriodID
+		superblockNumber compose.SuperblockNumber
+		proof            []byte
+	}{periodID, superblockNumber, append([]byte(nil), proof...)})
 }
 
 // mkHeader creates a minimal BlockHeader for tests.
@@ -94,4 +155,27 @@ func mkSettled(sb compose.SuperblockNumber, head BlockNumber) SettledState {
 		SuperblockNumber: sb,
 		SuperblockHash:   compose.SuperBlockHash{1, 2, 3},
 	}
+}
+
+func makeChainSet(ids ...compose.ChainID) map[compose.ChainID]struct{} {
+	m := make(map[compose.ChainID]struct{}, len(ids))
+	for _, id := range ids {
+		m[id] = struct{}{}
+	}
+	return m
+}
+
+func makeDefaultChainSet() map[compose.ChainID]struct{} {
+	return makeChainSet(
+		compose.ChainID(1),
+		compose.ChainID(2),
+		compose.ChainID(3),
+		compose.ChainID(4),
+		compose.ChainID(5),
+		compose.ChainID(6),
+		compose.ChainID(7),
+		compose.ChainID(8),
+		compose.ChainID(9),
+		compose.ChainID(10),
+	)
 }

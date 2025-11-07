@@ -1,6 +1,7 @@
 package sbcp
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/compose-network/specs/compose"
@@ -9,16 +10,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newPublisherForTest(
+	period compose.PeriodID,
+	finalized compose.SuperblockNumber,
+	hash compose.SuperBlockHash,
+	window uint64,
+	chains map[compose.ChainID]struct{},
+) (Publisher, *fakePublisherMessenger, *fakePublisherProver, *fakeL1) {
+	m := &fakePublisherMessenger{}
+	p := &fakePublisherProver{}
+	l1 := &fakeL1{}
+	pub := NewPublisher(p, m, l1, period, finalized, hash, window, testLogger(), chains)
+	return pub, m, p, l1
+}
+
 func TestPublisher_StartPeriod_basic_broadcast_and_reset(t *testing.T) {
-	m := &fakeMessenger{}
 	// Start with finalized = 7, target can be arbitrary here
-	pub := NewPublisher(
-		m,
+	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(9),
 		compose.SuperblockNumber(7),
 		compose.SuperBlockHash{9},
 		0,
-		testLogger(),
+		makeDefaultChainSet(),
 	)
 
 	// Start new period P=10 → target becomes F+1 = 8
@@ -33,9 +46,14 @@ func TestPublisher_StartPeriod_basic_broadcast_and_reset(t *testing.T) {
 }
 
 func TestPublisher_StartPeriod_error_when_target_exceeds_proof_window(t *testing.T) {
-	m := &fakeMessenger{}
 	// Trying to advance twice without a newer finalized superblock should fail.
-	pub := NewPublisher(m, compose.PeriodID(5), compose.SuperblockNumber(7), compose.SuperBlockHash{1}, 1, testLogger())
+	pub, m, _, _ := newPublisherForTest(
+		compose.PeriodID(5),
+		compose.SuperblockNumber(7),
+		compose.SuperBlockHash{1},
+		1,
+		makeDefaultChainSet(),
+	)
 
 	require.NoError(t, pub.StartPeriod())
 	require.NoError(t, pub.StartPeriod())
@@ -47,9 +65,14 @@ func TestPublisher_StartPeriod_error_when_target_exceeds_proof_window(t *testing
 }
 
 func TestPublisher_StartPeriod_no_window_constraint_when_disabled(t *testing.T) {
-	m := &fakeMessenger{}
 	// Proof window set to 0 should disable the constraint entirely.
-	pub := NewPublisher(m, compose.PeriodID(5), compose.SuperblockNumber(7), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, m, _, _ := newPublisherForTest(
+		compose.PeriodID(5),
+		compose.SuperblockNumber(7),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 
 	for i := 0; i < 3; i++ {
 		require.NoError(t, pub.StartPeriod())
@@ -59,8 +82,13 @@ func TestPublisher_StartPeriod_no_window_constraint_when_disabled(t *testing.T) 
 }
 
 func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
-	m := &fakeMessenger{}
-	pub := NewPublisher(m, compose.PeriodID(5), compose.SuperblockNumber(5), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, _, _, _ := newPublisherForTest(
+		compose.PeriodID(5),
+		compose.SuperblockNumber(5),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 
 	// First req touches chains {1,2}
 	req1 := makeXTRequest(
@@ -82,8 +110,13 @@ func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 }
 
 func TestPublisher_StartInstance_conflicting_set_rejected(t *testing.T) {
-	m := &fakeMessenger{}
-	pub := NewPublisher(m, compose.PeriodID(5), compose.SuperblockNumber(5), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, _, _, _ := newPublisherForTest(
+		compose.PeriodID(5),
+		compose.SuperblockNumber(5),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 
 	// Activate {1,2}
 	_, err := pub.StartInstance(
@@ -105,8 +138,13 @@ func TestPublisher_StartInstance_conflicting_set_rejected(t *testing.T) {
 }
 
 func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
-	m := &fakeMessenger{}
-	pub := NewPublisher(m, compose.PeriodID(2), compose.SuperblockNumber(2), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, _, _, _ := newPublisherForTest(
+		compose.PeriodID(2),
+		compose.SuperblockNumber(2),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 
 	inst, err := pub.StartInstance(makeXTRequest(
 		chainReq(7, []byte("a"), []byte("b")),
@@ -119,9 +157,14 @@ func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
 }
 
 func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
-	m := &fakeMessenger{}
 	// Start aligned: target = finalized + 1 = 10
-	pub := NewPublisher(m, compose.PeriodID(10), compose.SuperblockNumber(9), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, m, _, _ := newPublisherForTest(
+		compose.PeriodID(10),
+		compose.SuperblockNumber(9),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 
 	i1, err := pub.StartInstance(makeXTRequest(
 		chainReq(1, []byte("a1")),
@@ -150,8 +193,13 @@ func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 }
 
 func TestPublisher_StartInstance_populates_instance_fields(t *testing.T) {
-	messenger := &fakeMessenger{}
-	pub := NewPublisher(messenger, compose.PeriodID(1), compose.SuperblockNumber(1), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, messenger, _, _ := newPublisherForTest(
+		compose.PeriodID(1),
+		compose.SuperblockNumber(1),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 	req := makeXTRequest(
 		chainReq(1, []byte("x")),
 		chainReq(2, []byte("y")),
@@ -166,8 +214,13 @@ func TestPublisher_StartInstance_populates_instance_fields(t *testing.T) {
 }
 
 func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.T) {
-	m := &fakeMessenger{}
-	pub := NewPublisher(m, compose.PeriodID(1), compose.SuperblockNumber(1), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, _, _, _ := newPublisherForTest(
+		compose.PeriodID(1),
+		compose.SuperblockNumber(1),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 	inst, err := pub.StartInstance(
 		makeXTRequest(
 			chainReq(1, []byte("a")),
@@ -195,8 +248,13 @@ func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.
 }
 
 func TestPublisher_AdvanceSettledState_monotonic(t *testing.T) {
-	m := &fakeMessenger{}
-	pub := NewPublisher(m, compose.PeriodID(1), compose.SuperblockNumber(1), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, _, _, _ := newPublisherForTest(
+		compose.PeriodID(1),
+		compose.SuperblockNumber(1),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 	// Advance forward
 	err := pub.AdvanceSettledState(2, compose.SuperBlockHash{9})
 	require.NoError(t, err)
@@ -206,9 +264,14 @@ func TestPublisher_AdvanceSettledState_monotonic(t *testing.T) {
 }
 
 func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
-	m := &fakeMessenger{}
 	finalized := compose.SuperblockNumber(5)
-	pub := NewPublisher(m, compose.PeriodID(3), finalized, compose.SuperBlockHash{7}, 0, testLogger())
+	pub, m, _, _ := newPublisherForTest(
+		compose.PeriodID(3),
+		finalized,
+		compose.SuperBlockHash{7},
+		0,
+		makeDefaultChainSet(),
+	)
 
 	// Activate some chains
 	_, err := pub.StartInstance(
@@ -229,8 +292,13 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 }
 
 func TestPublisher_StartInstance_invalid_requests(t *testing.T) {
-	m := &fakeMessenger{}
-	pub := NewPublisher(m, compose.PeriodID(1), compose.SuperblockNumber(1), compose.SuperBlockHash{1}, 0, testLogger())
+	pub, m, _, _ := newPublisherForTest(
+		compose.PeriodID(1),
+		compose.SuperblockNumber(1),
+		compose.SuperBlockHash{1},
+		0,
+		makeDefaultChainSet(),
+	)
 
 	// Empty request
 	_, err := pub.StartInstance(compose.XTRequest{})
@@ -242,4 +310,92 @@ func TestPublisher_StartInstance_invalid_requests(t *testing.T) {
 
 	// No broadcast occurred
 	assert.Len(t, m.startInstances, 0)
+}
+
+func TestPublisher_ReceiveProof_aggregates_and_publishes(t *testing.T) {
+	chains := makeChainSet(compose.ChainID(1), compose.ChainID(2))
+	pub, _, prover, l1 := newPublisherForTest(
+		compose.PeriodID(10),
+		compose.SuperblockNumber(5),
+		compose.SuperBlockHash{1},
+		0,
+		chains,
+	)
+	prover.nextProof = []byte("network-proof")
+	require.NoError(t, pub.StartPeriod())
+	require.NoError(t, pub.StartPeriod())
+
+	// Receive proofs from both chains
+	pub.ReceiveProof(compose.PeriodID(11), compose.SuperblockNumber(6), []byte("proof-1"), compose.ChainID(1))
+	assert.Len(t, prover.calls, 0)
+	assert.Len(t, l1.published, 0)
+
+	pub.ReceiveProof(compose.PeriodID(11), compose.SuperblockNumber(6), []byte("proof-2"), compose.ChainID(2))
+	require.Len(t, prover.calls, 1)
+
+	// Check prover was called
+	call := prover.calls[0]
+	assert.Equal(t, compose.SuperblockNumber(6), call.superblock)
+	assert.Equal(t, compose.SuperBlockHash{1}, call.hash)
+	assert.Len(t, call.proofs, 2)
+	assert.ElementsMatch(t, [][]byte{[]byte("proof-1"), []byte("proof-2")}, call.proofs)
+
+	// Check L1 was called to publish
+	require.Len(t, l1.published, 1)
+	assert.Equal(t, compose.SuperblockNumber(6), l1.published[0].superblock)
+	assert.Equal(t, []byte("network-proof"), l1.published[0].proof)
+
+	// Check map has been cleared out
+	impl := pub.(*publisher)
+	assert.Nil(t, impl.Proofs[compose.SuperblockNumber(6)])
+}
+
+func TestPublisher_ReceiveProof_proverErrorTriggersRollback(t *testing.T) {
+	chains := makeChainSet(compose.ChainID(1), compose.ChainID(2))
+	pub, messenger, prover, l1 := newPublisherForTest(
+		compose.PeriodID(10),
+		compose.SuperblockNumber(5),
+		compose.SuperBlockHash{9},
+		0,
+		chains,
+	)
+	prover.err = errors.New("boom")
+	require.NoError(t, pub.StartPeriod())
+	require.NoError(t, pub.StartPeriod())
+
+	// Receives proofs from sequencers and trigger call to prover
+	pub.ReceiveProof(compose.PeriodID(11), compose.SuperblockNumber(6), []byte("proof-1"), compose.ChainID(1))
+	pub.ReceiveProof(compose.PeriodID(11), compose.SuperblockNumber(6), []byte("proof-2"), compose.ChainID(2))
+
+	// Check that didn't call publisher, and sent a rollback
+	assert.Len(t, l1.published, 0)
+	require.Len(t, messenger.rollbacks, 1)
+
+	// Correct rollback msg
+	rb := messenger.rollbacks[0]
+	assert.Equal(t, compose.SuperblockNumber(5), rb.S)
+	assert.Equal(t, compose.SuperBlockHash{9}, rb.H)
+}
+
+func TestPublisher_ReceiveProof_ignores_non_terminated_superblock(t *testing.T) {
+	chains := makeChainSet(compose.ChainID(1), compose.ChainID(2))
+	pub, _, prover, l1 := newPublisherForTest(
+		compose.PeriodID(5),
+		compose.SuperblockNumber(4),
+		compose.SuperBlockHash{3},
+		0,
+		chains,
+	)
+	require.NoError(t, pub.StartPeriod())
+
+	// Receive proof for non-terminated superblock (5)
+	superblock := compose.SuperblockNumber(5)
+	pub.ReceiveProof(compose.PeriodID(6), superblock, []byte("proof"), compose.ChainID(1))
+
+	assert.Len(t, prover.calls, 0)
+	assert.Len(t, l1.published, 0)
+	// Check that proof wasn't stored
+	impl := pub.(*publisher)
+	_, exists := impl.Proofs[superblock]
+	assert.False(t, exists)
 }

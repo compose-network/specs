@@ -15,24 +15,31 @@ func testLogger() zerolog.Logger {
 	return zerolog.New(io.Discard)
 }
 
-func TestSequencer_NewSequencer_initial_state(t *testing.T) {
-	p := &fakeProver{}
-	settled := mkSettled(4, 100)
-	s := NewSequencer(p, compose.PeriodID(10), compose.SuperblockNumber(11), settled, testLogger())
+func newSequencerForTest(
+	period compose.PeriodID,
+	target compose.SuperblockNumber,
+	settled SettledState,
+) (*sequencer, *fakeSequencerProver, *fakeSequencerMessenger) {
+	prover := &fakeSequencerProver{}
+	messenger := &fakeSequencerMessenger{}
+	s := NewSequencer(prover, messenger, period, target, settled, testLogger()).(*sequencer)
+	return s, prover, messenger
+}
 
-	// Downcast to access state for assertions
-	impl := s.(*sequencer)
-	assert.Equal(t, compose.PeriodID(10), impl.PeriodID)
-	assert.Equal(t, compose.SuperblockNumber(11), impl.TargetSuperblockNumber)
-	assert.Equal(t, BlockNumber(100), impl.Head)
-	assert.Nil(t, impl.PendingBlock)
-	assert.Nil(t, impl.ActiveInstanceID)
-	assert.Empty(t, impl.SealedBlockHead)
+func TestSequencer_NewSequencer_initial_state(t *testing.T) {
+	settled := mkSettled(4, 100)
+	s, _, _ := newSequencerForTest(compose.PeriodID(10), compose.SuperblockNumber(11), settled)
+
+	assert.Equal(t, compose.PeriodID(10), s.PeriodID)
+	assert.Equal(t, compose.SuperblockNumber(11), s.TargetSuperblockNumber)
+	assert.Equal(t, BlockNumber(100), s.Head)
+	assert.Nil(t, s.PendingBlock)
+	assert.Nil(t, s.ActiveInstanceID)
+	assert.Empty(t, s.SealedBlockHead)
 }
 
 func TestSequencer_BeginBlock_ok_and_errors(t *testing.T) {
-	p := &fakeProver{}
-	s := NewSequencer(p, compose.PeriodID(5), compose.SuperblockNumber(6), mkSettled(3, 10), testLogger()).(*sequencer)
+	s, _, _ := newSequencerForTest(compose.PeriodID(5), compose.SuperblockNumber(6), mkSettled(3, 10))
 
 	// OK path
 	require.NoError(t, s.BeginBlock(11)) // Head=10 => next=11
@@ -52,8 +59,7 @@ func TestSequencer_BeginBlock_ok_and_errors(t *testing.T) {
 }
 
 func TestSequencer_CanIncludeLocalTx_and_InstanceHooks(t *testing.T) {
-	p := &fakeProver{}
-	s := NewSequencer(p, compose.PeriodID(7), compose.SuperblockNumber(8), mkSettled(2, 20), testLogger()).(*sequencer)
+	s, _, _ := newSequencerForTest(compose.PeriodID(7), compose.SuperblockNumber(8), mkSettled(2, 20))
 
 	// No pending block -> false, NoPendingBlock
 	ok, err := s.CanIncludeLocalTx()
@@ -90,8 +96,7 @@ func TestSequencer_CanIncludeLocalTx_and_InstanceHooks(t *testing.T) {
 }
 
 func TestSequencer_EndBlock_seals_and_updates_head(t *testing.T) {
-	p := &fakeProver{}
-	s := NewSequencer(p, compose.PeriodID(3), compose.SuperblockNumber(4), mkSettled(1, 30), testLogger()).(*sequencer)
+	s, _, _ := newSequencerForTest(compose.PeriodID(3), compose.SuperblockNumber(4), mkSettled(1, 30))
 
 	require.NoError(t, s.BeginBlock(31))
 	// Seal mismatch
@@ -108,9 +113,9 @@ func TestSequencer_EndBlock_seals_and_updates_head(t *testing.T) {
 }
 
 func TestSequencer_EndBlock_triggers_prev_period_settlement(t *testing.T) {
-	p := &fakeProver{}
 	// Start at period 9, target 10, settled head 40
-	s := NewSequencer(p, compose.PeriodID(9), compose.SuperblockNumber(10), mkSettled(5, 40), testLogger()).(*sequencer)
+	s, p, messenger := newSequencerForTest(compose.PeriodID(9), compose.SuperblockNumber(10), mkSettled(5, 40))
+	p.nextProof = []byte("seq-proof")
 
 	// Build a block in period 9
 	require.NoError(t, s.BeginBlock(41))
@@ -127,21 +132,35 @@ func TestSequencer_EndBlock_triggers_prev_period_settlement(t *testing.T) {
 		assert.Equal(t, BlockNumber(41), call.hdr.Number)
 	}
 	assert.Equal(t, compose.SuperblockNumber(10), call.sb)
+
+	// Check that sequencer sent proof message
+	require.Len(t, messenger.proofs, 1)
+	assert.Equal(t, compose.PeriodID(9), messenger.proofs[0].periodID)
+	assert.Equal(t, compose.SuperblockNumber(10), messenger.proofs[0].superblockNumber)
+	assert.Equal(t, []byte("seq-proof"), messenger.proofs[0].proof)
 }
 
 func TestSequencer_StartPeriod_triggers_immediate_settlement_when_no_pending(t *testing.T) {
-	p := &fakeProver{}
 	// Period 10, target 11, settled at 50
-	s := NewSequencer(p, compose.PeriodID(10), compose.SuperblockNumber(11), mkSettled(6, 50), testLogger()).(*sequencer)
+	s, p, messenger := newSequencerForTest(compose.PeriodID(10), compose.SuperblockNumber(11), mkSettled(6, 50))
+	p.nextProof = []byte("seq-proof")
 
 	// Case 1: no sealed block for previous period → nil header
 	require.NoError(t, s.StartPeriod(compose.PeriodID(11), compose.SuperblockNumber(12)))
 	require.Len(t, p.calls, 1)
+	// Prover was called with nil header and superblock number 11
 	assert.Nil(t, p.calls[0].hdr)
 	assert.Equal(t, compose.SuperblockNumber(11), p.calls[0].sb)
+	// Check that proof was sent to SP
+	require.Len(t, messenger.proofs, 1)
+	assert.Equal(t, compose.PeriodID(10), messenger.proofs[0].periodID)
+	assert.Equal(t, compose.SuperblockNumber(11), messenger.proofs[0].superblockNumber)
+	assert.Equal(t, []byte("seq-proof"), messenger.proofs[0].proof)
 
 	// Case 2: add sealed block for previous period, then start next period
 	p.calls = nil
+	messenger.proofs = nil
+	// Creates a block for superblock 12
 	s.SealedBlockHead[11] = SealedBlockHeader{
 		BlockHeader:      mkHeader(51),
 		PeriodID:         11,
@@ -149,16 +168,21 @@ func TestSequencer_StartPeriod_triggers_immediate_settlement_when_no_pending(t *
 	}
 	require.NoError(t, s.StartPeriod(compose.PeriodID(12), compose.SuperblockNumber(13)))
 	require.Len(t, p.calls, 1)
+	// Check prover call content
 	if assert.NotNil(t, p.calls[0].hdr) {
 		assert.Equal(t, BlockNumber(51), p.calls[0].hdr.Number)
 	}
 	assert.Equal(t, compose.SuperblockNumber(12), p.calls[0].sb)
+	// Check that proof was sent to SP
+	require.Len(t, messenger.proofs, 1)
+	assert.Equal(t, compose.PeriodID(11), messenger.proofs[0].periodID)
+	assert.Equal(t, compose.SuperblockNumber(12), messenger.proofs[0].superblockNumber)
+	assert.Equal(t, []byte("seq-proof"), messenger.proofs[0].proof)
 }
 
 func TestSequencer_StartPeriod_active_instance_does_not_defer_in_impl(t *testing.T) {
 	// Spec would defer on active instance; impl only checks PendingBlock.
-	p := &fakeProver{}
-	s := NewSequencer(p, compose.PeriodID(2), compose.SuperblockNumber(3), mkSettled(1, 10), testLogger()).(*sequencer)
+	s, p, _ := newSequencerForTest(compose.PeriodID(2), compose.SuperblockNumber(3), mkSettled(1, 10))
 	// No pending block, set active instance only
 	s.ActiveInstanceID = &compose.InstanceID{1}
 
@@ -167,9 +191,21 @@ func TestSequencer_StartPeriod_active_instance_does_not_defer_in_impl(t *testing
 	require.Len(t, p.calls, 1)
 }
 
+func TestSequencer_ReceiveXTRequest_forwardsToPublisher(t *testing.T) {
+	s, _, messenger := newSequencerForTest(compose.PeriodID(4), compose.SuperblockNumber(5), mkSettled(2, 10))
+	req := makeXTRequest(
+		chainReq(1, []byte("a")),
+		chainReq(2, []byte("b")),
+	)
+
+	s.ReceiveXTRequest(req)
+
+	require.Len(t, messenger.requests, 1)
+	assert.Equal(t, req, messenger.requests[0])
+}
+
 func TestSequencer_AdvanceSettledState_monotonic(t *testing.T) {
-	p := &fakeProver{}
-	s := NewSequencer(p, compose.PeriodID(1), compose.SuperblockNumber(2), mkSettled(1, 5), testLogger()).(*sequencer)
+	s, _, _ := newSequencerForTest(compose.PeriodID(1), compose.SuperblockNumber(2), mkSettled(1, 5))
 	// No update for same number
 	s.AdvanceSettledState(mkSettled(1, 5))
 	// Advance forward
@@ -177,18 +213,16 @@ func TestSequencer_AdvanceSettledState_monotonic(t *testing.T) {
 }
 
 func TestSequencer_Rollback_rejects_if_mismatch(t *testing.T) {
-	p := &fakeProver{}
 	settled := mkSettled(4, 100)
-	s := NewSequencer(p, compose.PeriodID(9), compose.SuperblockNumber(10), settled, testLogger()).(*sequencer)
+	s, _, _ := newSequencerForTest(compose.PeriodID(9), compose.SuperblockNumber(10), settled)
 
 	_, err := s.Rollback(5, compose.SuperBlockHash{9}, compose.PeriodID(9))
 	require.ErrorIs(t, err, ErrMismatchedFinalizedState)
 }
 
 func TestSequencer_Rollback_discards_newer_and_resets(t *testing.T) {
-	p := &fakeProver{}
 	settled := mkSettled(4, 100)
-	s := NewSequencer(p, compose.PeriodID(9), compose.SuperblockNumber(10), settled, testLogger()).(*sequencer)
+	s, _, _ := newSequencerForTest(compose.PeriodID(9), compose.SuperblockNumber(10), settled)
 
 	// Seed sealed blocks across periods with various targets
 	s.SealedBlockHead[8] = SealedBlockHeader{
