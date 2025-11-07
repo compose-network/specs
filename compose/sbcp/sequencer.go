@@ -121,7 +121,6 @@ func (s *sequencer) StartPeriod(
 	targetSuperblockNumber compose.SuperblockNumber,
 ) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	s.logger.Info().
 		Uint64("new_period_id", uint64(periodID)).
@@ -131,11 +130,13 @@ func (s *sequencer) StartPeriod(
 	s.PeriodID = periodID
 	s.TargetSuperblockNumber = targetSuperblockNumber
 
+	s.mu.Unlock()
+
 	// If there is an active block (with periodID P-1), the settlement pipeline for P-1 must wait until it's sealed.
 	// Else, it can be triggered right away.
 	if s.PendingBlock == nil {
 		s.logger.Info().Msg("No pending block, triggering settlement pipeline")
-		s.startSettlement(s.PeriodID-1, targetSuperblockNumber-1)
+		s.startSettlement(periodID-1, targetSuperblockNumber-1)
 	} else {
 		s.logger.Info().Msg("Started new period, but pending block exists, settlement pipeline will wait")
 	}
@@ -227,8 +228,8 @@ func (s *sequencer) OnDecidedInstance(id compose.InstanceID) error {
 
 func (s *sequencer) EndBlock(b BlockHeader) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.PendingBlock.Number != b.Number {
+		s.mu.Unlock()
 		return ErrBlockSealMismatch
 	}
 
@@ -239,15 +240,21 @@ func (s *sequencer) EndBlock(b BlockHeader) error {
 		SuperblockNumber: s.PendingBlock.SuperblockNumber,
 	}
 
-	// A block from the previous period has ended, which means the period has ended,
-	// therefore it's time to request proofs for it.
-	if s.PendingBlock.PeriodID < s.PeriodID {
-		s.logger.Info().Msg("Period was ahead of sealed block, triggering settlement pipeline")
-		s.startSettlement(s.PeriodID-1, s.TargetSuperblockNumber-1)
-	}
+	shouldStartSettlement := s.PendingBlock.PeriodID < s.PeriodID
+	settlementPeriod := s.PeriodID - 1
+	settlementSuperblock := s.TargetSuperblockNumber - 1
 
 	s.PendingBlock = nil
 	s.Head = b.Number
+
+	s.mu.Unlock()
+
+	// A block from the previous period has ended, which means the period has also ended,
+	// therefore it's time to request proofs for it.
+	if shouldStartSettlement {
+		s.logger.Info().Msg("Period was ahead of sealed block, triggering settlement pipeline")
+		s.startSettlement(settlementPeriod, settlementSuperblock)
+	}
 	return nil
 }
 
