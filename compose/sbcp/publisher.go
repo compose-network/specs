@@ -171,6 +171,16 @@ func (p *publisher) ReceiveProof(periodID compose.PeriodID, superblockNumber com
 		return
 	}
 
+	// If the proof is for an non-terminated superblock, ignore it.
+	if superblockNumber >= p.TargetSuperblockNumber {
+		p.logger.Warn().
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Uint64("chain_id", uint64(chainID)).
+			Msg("Received proof for non-terminated superblock, ignoring")
+		p.mu.Unlock()
+		return
+	}
+
 	// If the proof is for a superblock that is not the next one, ignore it.
 	if superblockNumber != p.LastFinalizedSuperblockNumber+1 {
 		p.logger.Warn().
