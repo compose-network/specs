@@ -32,9 +32,16 @@ type Publisher interface {
 	// ProofTimeout: Once a period starts, if the network ZK proof is not generated within 9 epochs,
 	// the publisher must roll back to the last finalized superblock and discard any active settlement pipeline.
 	ProofTimeout()
+	// ReceiveProof is called whenever a proof is received from a sequencer.
+	ReceiveProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte, chainID compose.ChainID)
 }
 
-type Messenger interface {
+type PublisherProver interface {
+	// RequestNetworkProof requests a proof for the given superblock number. It's called after all proofs from sequencers have been received.
+	RequestNetworkProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperBlockHash, proofs [][]byte) ([]byte, error)
+}
+
+type PublisherMessenger interface {
 	BroadcastStartPeriod(periodID compose.PeriodID, targetSuperblockNumber compose.SuperblockNumber)
 	BroadcastRollback(
 		periodID compose.PeriodID,
@@ -43,13 +50,19 @@ type Messenger interface {
 	)
 }
 
+type L1 interface {
+	PublishProof(superblockNumber compose.SuperblockNumber, proof []byte)
+}
+
 type PublisherState struct {
 	PeriodID               compose.PeriodID
 	TargetSuperblockNumber compose.SuperblockNumber
 
-	// Last finalized state in L1
+	// Settlement state
 	LastFinalizedSuperblockNumber compose.SuperblockNumber
 	LastFinalizedSuperblockHash   compose.SuperBlockHash
+	Proofs                        map[compose.SuperblockNumber]map[compose.ChainID][]byte
+	Chains                        map[compose.ChainID]struct{}
 
 	// Instances scheduling
 	SequenceNumber compose.SequenceNumber   // Per-period sequence counter (monotone)
@@ -65,7 +78,9 @@ type PublisherState struct {
 
 type publisher struct {
 	mu        sync.Mutex
-	messenger Messenger
+	prover    PublisherProver
+	messenger PublisherMessenger
+	l1        L1
 	PublisherState
 }
 
@@ -73,23 +88,31 @@ type publisher struct {
 // TargetSuperblockNumber is set to lastFinalizedSuperblockNumber initially.
 // StartPeriod needs to be called to start the first period, automatically incrementing PeriodID and TargetSuperblockNumber.
 // Thus, if the current period is N, call NewPublisher with periodID = N-1.
-func NewPublisher(messenger Messenger,
+func NewPublisher(
+	prover PublisherProver,
+	messenger PublisherMessenger,
+	l1 L1,
 	periodID compose.PeriodID,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockHash compose.SuperBlockHash,
 	proofWindow uint64,
 	logger zerolog.Logger,
+	chains map[compose.ChainID]struct{},
 ) Publisher {
 	return &publisher{
 		mu:        sync.Mutex{},
+		prover:    prover,
 		messenger: messenger,
+		l1:        l1,
 		PublisherState: PublisherState{
 			PeriodID:               periodID,
 			TargetSuperblockNumber: lastFinalizedSuperblockNumber,
 
-			// Last finalized state in L1
+			// Settlement state
 			LastFinalizedSuperblockNumber: lastFinalizedSuperblockNumber,
 			LastFinalizedSuperblockHash:   lastFinalizedSuperblockHash,
+			Proofs:                        make(map[compose.SuperblockNumber]map[compose.ChainID][]byte),
+			Chains:                        chains,
 
 			// Instances scheduling
 			SequenceNumber: 0,
@@ -132,6 +155,100 @@ func (p *publisher) StartPeriod() error {
 
 	p.SequenceNumber = 0
 	return nil
+}
+
+// ReceiveProof is called whenever a proof is received from a sequencer.
+func (p *publisher) ReceiveProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte, chainID compose.ChainID) {
+	p.mu.Lock()
+
+	// If the proof is for an old superblock, ignore it.
+	if superblockNumber <= p.LastFinalizedSuperblockNumber {
+		p.logger.Warn().
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Uint64("chain_id", uint64(chainID)).
+			Msg("Received proof for old superblock, ignoring")
+		p.mu.Unlock()
+		return
+	}
+
+	// If the proof is for a superblock that is not the next one, ignore it.
+	if superblockNumber != p.LastFinalizedSuperblockNumber+1 {
+		p.logger.Warn().
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Uint64("chain_id", uint64(chainID)).
+			Msg("Received proof for superblock that is not the next one, ignoring")
+		p.mu.Unlock()
+		return
+	}
+
+	// Check period is correct
+	periodDiff := p.TargetSuperblockNumber - superblockNumber
+	expectedPeriod := p.PeriodID - compose.PeriodID(periodDiff)
+	if periodID != expectedPeriod {
+		p.logger.Warn().
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Uint64("chain_id", uint64(chainID)).
+			Uint64("expected_period", uint64(expectedPeriod)).
+			Uint64("received_period", uint64(periodID)).
+			Msg("Received proof for wrong period, ignoring")
+		p.mu.Unlock()
+		return
+	}
+
+	// If proof has already been received, ignore it.
+	if _, ok := p.Proofs[superblockNumber]; !ok {
+		p.Proofs[superblockNumber] = make(map[compose.ChainID][]byte)
+	}
+	if _, ok := p.Proofs[superblockNumber][chainID]; ok {
+		p.logger.Warn().
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Uint64("chain_id", uint64(chainID)).
+			Msg("Already received proof , ignoring")
+		p.mu.Unlock()
+		return
+	}
+
+	p.Proofs[superblockNumber][chainID] = proof
+
+	// If didn't receive enough proofs, continue waiting.
+	if len(p.Proofs[superblockNumber]) < len(p.Chains) {
+		p.logger.Info().
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Uint64("chain_id", uint64(chainID)).
+			Int("received_proofs", len(p.Proofs[superblockNumber])).
+			Int("total_chains", len(p.Chains)).
+			Msg("Received proof, waiting for more")
+		p.mu.Unlock()
+		return
+	}
+
+	p.logger.Info().
+		Uint64("superblock_number", uint64(superblockNumber)).
+		Uint64("chain_id", uint64(chainID)).
+		Msg("Received enough proofs, generating proof")
+
+	seqProofs := make([][]byte, 0)
+	for _, seqProof := range p.Proofs[superblockNumber] {
+		seqProofs = append(seqProofs, seqProof)
+	}
+
+	lastSuperblockHash := p.LastFinalizedSuperblockHash
+	p.mu.Unlock()
+
+	networkProof, err := p.prover.RequestNetworkProof(superblockNumber, lastSuperblockHash, seqProofs)
+	if err != nil {
+		p.logger.Error().
+			Err(err).
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Uint64("chain_id", uint64(chainID)).
+			Msg("Failed to generate network proof. Triggering rollback")
+		p.rollback()
+		return
+	}
+	p.mu.Lock()
+	p.Proofs[superblockNumber] = nil
+	p.mu.Unlock()
+	p.l1.PublishProof(superblockNumber, networkProof)
 }
 
 // StartInstance is called by the upper layer to try starting a new instance.
@@ -229,17 +346,25 @@ func (p *publisher) AdvanceSettledState(
 // ProofTimeout is called whenever a pending superblock is not proven within the allowed proof window.
 // It triggers a rollback to the last finalized superblock, resetting the active chains and sequence number.
 func (p *publisher) ProofTimeout() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.logger.Warn().
+	p.logger.Info().
 		Uint64("finalized_superblock_number", uint64(p.LastFinalizedSuperblockNumber)).
 		Msg("Proof timeout occurred, rolling back to last finalized superblock")
+	p.rollback()
+}
+
+func (p *publisher) rollback() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	p.ActiveChains = make(map[compose.ChainID]bool)
 	p.SequenceNumber = 0
 	p.TargetSuperblockNumber = p.LastFinalizedSuperblockNumber + 1
 	p.messenger.BroadcastRollback(p.PeriodID, p.LastFinalizedSuperblockNumber, p.LastFinalizedSuperblockHash)
+
+	// Clear proofs
+	for superblockNumber := range p.Proofs {
+		delete(p.Proofs, superblockNumber)
+	}
 }
 
 // Util functions

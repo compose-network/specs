@@ -30,6 +30,9 @@ type Sequencer interface {
 		currentPeriodID compose.PeriodID,
 	) (BlockHeader, error)
 
+	// ReceiveXTRequest is called whenever a request from a user is received.
+	ReceiveXTRequest(request compose.XTRequest)
+
 	// AdvanceSettledState is called when the L1 settlement event has occurred.
 	AdvanceSettledState(SettledState)
 
@@ -46,10 +49,15 @@ type Sequencer interface {
 	EndBlock(b BlockHeader) error
 }
 
-type Prover interface {
+type SequencerProver interface {
 	// RequestProofs starts the settlement pipeline using the provided block header as head.
 	// If nil, it means there's no sealed block for the period.
-	RequestProofs(blockHeader *BlockHeader, superblockNumber compose.SuperblockNumber)
+	RequestProofs(blockHeader *BlockHeader, superblockNumber compose.SuperblockNumber) []byte
+}
+
+type SequencerMessenger interface {
+	ForwardRequest(request compose.XTRequest)
+	SendProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte)
 }
 
 type SequencerState struct {
@@ -70,21 +78,24 @@ type SequencerState struct {
 }
 
 type sequencer struct {
-	mu     sync.Mutex
-	prover Prover
+	mu        sync.Mutex
+	prover    SequencerProver
+	messenger SequencerMessenger
 	SequencerState
 }
 
 func NewSequencer(
-	prover Prover,
+	prover SequencerProver,
+	messenger SequencerMessenger,
 	periodID compose.PeriodID,
 	targetSuperblock compose.SuperblockNumber,
 	settledState SettledState,
 	logger zerolog.Logger,
 ) Sequencer {
 	return &sequencer{
-		mu:     sync.Mutex{},
-		prover: prover,
+		mu:        sync.Mutex{},
+		prover:    prover,
+		messenger: messenger,
 		SequencerState: SequencerState{
 			PeriodID:               periodID,
 			TargetSuperblockNumber: targetSuperblock,
@@ -96,6 +107,12 @@ func NewSequencer(
 			logger:                 logger,
 		},
 	}
+}
+
+// ReceiveXTRequest is called whenever a request from a user is received.
+// It should be forwarded to the publisher, who has the rights of starting an instance for it.
+func (s *sequencer) ReceiveXTRequest(request compose.XTRequest) {
+	s.messenger.ForwardRequest(request)
 }
 
 // StartPeriod starts a new period, which triggers the settlement pipeline if there's no active block.
@@ -117,15 +134,29 @@ func (s *sequencer) StartPeriod(
 	// If there is an active block (with periodID P-1), the settlement pipeline for P-1 must wait until it's sealed.
 	// Else, it can be triggered right away.
 	if s.PendingBlock == nil {
-		var header *BlockHeader
-		block, ok := s.SealedBlockHead[s.PeriodID-1]
-		if ok {
-			header = &block.BlockHeader
-		}
 		s.logger.Info().Msg("No pending block, triggering settlement pipeline")
-		s.prover.RequestProofs(header, targetSuperblockNumber-1)
+		s.startSettlement(s.PeriodID-1, targetSuperblockNumber-1)
+	} else {
+		s.logger.Info().Msg("Started new period, but pending block exists, settlement pipeline will wait")
 	}
 	return nil
+}
+
+// startSettlement starts the settlement pipeline for the given period.
+// It requests a proof from the prover. Note that this operation may take a while and thus it is done outside locks.
+// Then, it sends the proof to the SP.
+func (s *sequencer) startSettlement(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber) {
+	s.mu.Lock()
+	var header *BlockHeader
+	block, ok := s.SealedBlockHead[periodID]
+	if ok {
+		header = &block.BlockHeader
+	}
+	s.mu.Unlock()
+	// Request proof to prover
+	proof := s.prover.RequestProofs(header, superblockNumber)
+	// Send proof to SP
+	s.messenger.SendProof(periodID, superblockNumber, proof)
 }
 
 // BeginBlock is a hook called at the start of a new L2 block.
@@ -211,13 +242,8 @@ func (s *sequencer) EndBlock(b BlockHeader) error {
 	// A block from the previous period has ended, which means the period has ended,
 	// therefore it's time to request proofs for it.
 	if s.PendingBlock.PeriodID < s.PeriodID {
-		var header *BlockHeader
-		block, ok := s.SealedBlockHead[s.PeriodID-1]
-		if ok {
-			header = &block.BlockHeader
-		}
 		s.logger.Info().Msg("Period was ahead of sealed block, triggering settlement pipeline")
-		s.prover.RequestProofs(header, s.TargetSuperblockNumber-1)
+		s.startSettlement(s.PeriodID-1, s.TargetSuperblockNumber-1)
 	}
 
 	s.PendingBlock = nil

@@ -99,6 +99,13 @@ message Rollback {
   bytes last_finalized_superblock_hash = 3; // Last finalized superblock hash
 }
 
+// Message sent by sequencers to SP containing their proof for a superblock
+message Proof {
+  uint64 period_id = 1;
+  uint64 superblock_number = 2;
+  bytes proof_data = 3;
+}
+
 // =============================================================================
 // CROSS-DOMAIN COMPOSABILITY PROTOCOL (CDCP) NEW MESSAGES
 // =============================================================================
