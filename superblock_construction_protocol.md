@@ -1,5 +1,8 @@
 # Superblock Construction Protocol (SBCP) <!-- omit from toc -->
 
+> [!WARN]
+> This version is deprecated. Please refer to the [SBCP v2 document](./superblock_construction_protocol_v2.md) instead.
+
 This document describes the protocol from the beginning of the slot until all L2 blocks are constructed and published.
 
 > [!NOTE]
