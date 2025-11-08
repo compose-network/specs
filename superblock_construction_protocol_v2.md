@@ -73,13 +73,13 @@ though it's not covered here and should be treated in a later version.
 ## Properties
 
 **Safety**
-- Agreement: All correct processes that finalize a superblock number $N$ agree on the same superblock object for $N$, read from L1.
-- Monotonicity: Finalized superblocks form a single chain, each referencing the previous via parent hash, with monotonically increasing superblock numbers.
-- Composability Consistency: For every ended period, every pair of chains agree on the same **ordered** set of successful composability instances that both participated. 
-- Sequentiality: For any rollup, composability instances are executed one at a time (no overlap).
+- **Agreement**: All correct processes that finalize a superblock number $N$ agree on the same superblock object for $N$, read from L1.
+- **Monotonicity**: Finalized superblocks form a single chain, each referencing the previous via parent hash, with monotonically increasing superblock numbers.
+- **Composability** Consistency: For every ended period, every pair of chains agree on the same **ordered** set of successful composability instances that both participated. 
+- **Sequentiality**: For any rollup, composability instances are executed one at a time (no overlap).
 
 **Liveness** (under partial synchrony and live SP)
-- Superblock Progress: Eventually, every superblock produced during a period is finalized or discarded and a rollback is triggered. 
+- **Superblock Progress**: Eventually, every superblock produced during a period is finalized or discarded and a rollback is triggered. 
 
 ## Time And Periods
 

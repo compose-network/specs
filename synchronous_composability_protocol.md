@@ -17,14 +17,15 @@ This document explains the Synchronous Composability Protocol that allows a set 
 
 The system consists of the following primary components/actors:
 - **Users**: Clients who submit cross-chain transaction requests containing a batch of transactions targeting multiple rollups.
-- **Rollups**: L2 chains following the OP Stack, each with its own Mailbox contract.
 - **Sequencers**: One sequencer per rollup responsible for transaction inclusion and sequencing.
 - **Shared Publisher (SP)**: A fixed actor that coordinates the protocol.
 
-The communication is assumed to be authenticated and asynchronous. It can be implemented via Protobuf-encoded messages over network endpoints provided by some external layer.
 
-The system tolerates crash faults from sequencers, though the shared publisher can't crash to guarantee termination.
-This is explored more deeply in the [Fault Tolerance](#fault-tolerance) section.
+Communication:
+- Authenticated, partially synchronous channels between any two actors.
+
+Fault model (explored more deeply in the [Fault Tolerance](#fault-tolerance) section):
+- Crash faults for sequencers, while the SP must be live to guarantee termination.
 
 ## Properties
 
@@ -35,71 +36,75 @@ The protocol keeps the properties of 2PC, ensuring the following safety properti
 And liveness property:
 - **Termination**: If there are no failures, then all processes eventually decide (*weak termination*).
 
-Extended desired properties for block sequencing will be provided in the [superblock construction protocol document](./superblock_construction_protocol.md).
+Extended desired properties for block sequencing will be provided by the SBCP protocol.
 
 ## Messages
 
 ```protobuf
-// User request
-message xTRequest {
-    repeated TransactionRequest Transactions = 1;
-}
+// Internal
 message TransactionRequest {
-    uint32 ChainID = 1;
-    repeated bytes Transaction = 2;
+  uint64 chain_id = 1;
+  repeated bytes transaction = 2;
 }
-// Start
-message StartSC {
-    uint64 Slot = 1;
-    uint64 xTSequenceNumber = 2;
-    xTRequest xTRequest = 3;
-    bytes xTid = 4; // 32-byte SHA256 hash over xTRequest
+
+// User -> Sequencer and User/Sequencer -> SP
+message XTRequest {
+  repeated TransactionRequest transaction_requests = 1;
 }
-// CIRC
-message CIRCMessage {
-    uint32 SourceChainID = 1;
-    uint32 DestinationChainID = 2;
-    repeated bytes Source = 3;
-    repeated bytes Receiver = 4;
-    uint32 SessionID = 5;
-    string Label = 6;
-    repeated bytes Data = 7; // ABI encoded arguments
-    bytes xTid = 8;
-    uint64 Slot = 9;
+
+// SP -> Sequencers
+message StartInstance {
+  bytes instance_id = 1;
+  uint64 period_id = 2;
+  uint64 sequence_number = 3;
+  XTRequest xt_request = 4;
 }
-// 2PC
+
+// Sequencers -> SP
 message Vote {
-    bytes SenderChain = 1;
-    bytes xTid = 2;
-    bool Vote = 3;
-    uint64 Slot = 4;
+  bytes instance_id = 1;
+  uint64 chain_id = 2;
+  bool vote = 3;
 }
+
+// SP -> Sequencers
 message Decided {
-    bytes xTid = 1;
-    bool Decision = 2;
-    uint64 Slot = 3;
+  bytes instance_id = 1;
+  bool decision = 2;
+}
+
+// Sequencer -> Sequencer
+message MailboxMessage {
+  bytes instance_id = 1;
+  uint64 source_chain = 2;
+  uint64 destination_chain = 3;
+  bytes source = 4;
+  bytes receiver = 5;
+  uint64 session_id = 6;
+  string label = 7;
+  repeated bytes data = 8;
 }
 ```
 
 where `TransactionRequest.Transaction` is an encoded [Ethereum transaction](https://github.com/ethereum/go-ethereum/blob/master/core/types/transaction.go).
 
-Where present, the slot and xT sequence number serves only for identification for the upper protocol layer.
+Where present, instance ID, period ID, and sequence numbers serve only for identification for the upper protocol layer (SBCP).
 Thus, it can be ignored for the discussion presented here.
 
 ## Protocol
 
 Before the protocol even starts, sequencers receive cross-chain transaction requests from users and send them to the shared publisher, who is responsible for starting the protocol to decide on their inclusion.
-The shared publisher starts the protocol by sending a `StartSC` message, which contains the slot number they are in, the cross-chain request, its identifier, and the ordering number in the slot for such request.
+The shared publisher starts the protocol by sending a `StartInstance` message, which contains identifiers and the user's request.
 In parallel to sending the message, the shared publisher starts a local timer.
 
-Once a sequencer receives the `StartSC` message, it starts its local timer and filters transactions that target its chain according to the `ChainID` field.
+Once a sequencer receives the `StartInstance` message, it starts its local timer and filters transactions that target its chain according to the `ChainID` field.
 Then, it simulates its transactions by executing them alongside a tracer that keeps track of Mailbox write and read calls.
-The simulation returns an execution result and a collection of CIRC messages produced.
-Every created CIRC message should be sent to the sequencer of the message's destination chain through a `CIRCMessage`, if not sent already.
+The simulation returns an execution result, and a collection of produced Mailbox messages.
+Every created Mailbox message should be sent to the sequencer of the message's destination chain through a `MailboxMessage`, if not sent already.
 If the execution result is an error due to a missing message in a Mailbox read operation, the sequencer waits for such a message.
-Whenever a new CIRC message is received, the sequencer adds a transaction that populates the mailbox with the received message and tries the whole process again.
+Whenever a new Mailbox message is received and expected by the transactions, the sequencer adds an auxiliary transaction (`mailbox.putInbox`) that populates the mailbox with the received message and tries the whole process again.
 The sequencer only terminates this phase on 2 conditions:
-1. Once the simulation returns a successful or failure execution result, with the failure not caused by the Mailbox.
+1. Once the simulation returns a successful or failure execution results, with the failure not caused by the Mailbox.
 2. Local timer expires.
 
 Once the sequencer terminates the simulation phase and knows the transaction's execution result, it sends a `Vote` message to the shared publisher with a flag indicating whether it can include the transaction or not.
@@ -107,23 +112,26 @@ The shared publisher waits for a vote from every participating rollup.
 If all votes are received with `vote=True`, then it broadcasts a `Decided` message with `decision=True`.
 If a vote is received with `vote=False`, it can immediately terminate (even it didn't receive all votes yet) and broadcast a `Decided` message with `decision=False`.
 
-Upon receiving a `Decided` message, the sequencer stores the output and, if `decision=True`, adds its transactions to the block, or, if `decision=False`, doesn't add the transaction to the block and removes the transactions created to populate the Mailbox.
+Upon receiving a `Decided` message, the sequencer stores the output and,
+if `decision=True`, adds the list of auxiliary and main transactions to the block,
+otherwise (`decision=False`), it doesn't add any transaction to the block, reverting to the original state prior to the protocol.
 
-On the side of the sequencer, if there's a timeout and it hasn't sent a `Vote` message yet, it sends a `Vote` message with `vote=False`.
-On the side of the shared publisher, if there's a timeout and it didn't send a `Decided` message yet, it sends a `Decided` message with `decision=False`.
+On the side of the sequencer, if there's a timeout, and it hasn't sent a `Vote` message yet, it sends a `Vote` message with `vote=False`.
+On the side of the shared publisher, if there's a timeout, and it didn't send a `Decided` message yet, it sends a `Decided` message with `decision=False`.
 
-It's important to note that, in any case, the sequencer can only send one `Vote` message and the shared publisher one `Decided` message. Therefore, whenever processing a trigger such as the timeout, the receipt of all votes, or the receipt of a missing CIRC message, the process must check that the outcome message wasn't sent before.
+It's important to note that, in any case, the sequencer can only send one `Vote` message and the shared publisher one `Decided` message.
+Therefore, whenever processing a trigger such as the timeout, the receipt of all votes, or the receipt of a missing Mailbox message, the process must check that the outcome message wasn't sent before.
 
 > [!NOTE]
 > The location of this transaction that populates the Mailbox doesn't need to be strictly top-of-block.
 > The only requirement is that it happens before the transaction of the cross-chain request.
 
 
-`ScpSequencerInstance` - **SCP Algorithm for the sequencer for a cross-chain transaction with ID xTid**
+`ScpSequencerInstance` - **SCP Algorithm for the sequencer**
 ```
 Constants:
     ownChainID              // ID of the rollup this sequencer is responsible for
-    xTid                    // Cross-chain transaction ID
+    id                    // Cross-chain transaction ID
     timerDuration
 
 State Variables:
@@ -131,39 +139,51 @@ State Variables:
     decision ← ⊥            // Final decision received
     timer                   // Local timer
     localTxs                // Transactions to be simulated for this chain
+    putInboxTxs ← ∅         // mailbox.putInbox transactions to populate the mailbox for read operations
+    expectedMailbox ← ∅     // messages that are still expected to be received from other sequencers
+    receivedMailbox ← ∅     // messages received from other sequencers, but not yet processed
 
-Upon receiving StartSC(_, _, xTRequest, xTid):
+Upon receiving StartInstance(id, _, _, xTRequest):
     set timer to running and expire after timerDuration seconds
     localTxs ← filter xTRequest.Transactions where ChainID = ownChainID
     SimulateLocalTxs()
 
 Procedure SimulateLocalTxs():
-    (result, circMsgs) ← Simulate(localTxs)
+    (result, writtenMsgs) ← Simulate(putInboxTxs, localTxs)
 
-    for msg in circMsgs:
+    for msg in writtenMsgs:
         if msg not yet sent:
-        send msg to destination sequencer
+            send msg to destination sequencer
 
     if result == failure_due_to_mailbox_read:
-        return
+        expectedMailbox ← add missing message from result
+        return consumeMessagesAndRetry()
     else if result == transaction_success:
         Vote(True)
     else if result == transaction_failure:
         Vote(False)
 
-Upon receiving a new CIRCMessage(...) for xTid:
-    populateInbox(CIRCMessage(...)) // Adds a transaction that populates the mailbox with the CIRC message
-    SimulateLocalTxs()
+procedure consumeMessagesAndRetry():
+    msgs = expectedMailbox ∩ receivedMailbox
+    if msgs != ∅:
+        expectedMailbox.remove(msgs)
+        receivedMailbox.remove(msgs)
+        putInboxTxs.add(mailbox.putInbox(msgs))
+        return SimulateLocalTxs()
+
+Upon receiving a new MailboxMessage(...):
+    receivedMailbox.add(MailboxMessage(...))
+    consumeMessagesAndRetry()
 
 Procedure Vote(v):
   if hasVoted == False:
     hasVoted ← True
-    send Vote(ownChainID, xTid, v) to the shared publisher
+    send Vote(id, ownChainID, v) to the shared publisher
 
 Upon timer expires and hasVoted == False:
   Vote(False)
 
-Upon receiving Decided(xTid, decisionFlag):
+Upon receiving Decided(id, decisionFlag):
     decision ← decisionFlag
     if decisionFlag == True:
         add localTxs to block
@@ -172,10 +192,10 @@ Upon receiving Decided(xTid, decisionFlag):
 ```
 
 
-`ScpPublisherInstance` - **SCP Algorithm for the shared publisher for a cross-chain transaction with ID xTid**
+`ScpPublisherInstance` - **SCP Algorithm for the shared publisher**
 ```
 Constants:
-    xTid                    // Cross-chain transaction ID
+    id                    // instance ID
     timerDuration
 
 State Variables:
@@ -184,12 +204,12 @@ State Variables:
     rollups ← ⊥             // Set of participating rollups
     votes ← ∅               // Set of participating rollups
 
-Procedure Start(xTRequest, xTid, slot, seqNumber, participatingRollups):
+Procedure Start(id, periodID, seqNumber, xTRequest):
     set timer to running and expire after timerDuration seconds
-    rollups ← participatingRollups
-    send StartSC(slot, seqNumber, xTRequest, xTid) to all sequencers of the participating rollups
+    rollups ← chains from xTRequest
+    send StartInstance(id, periodID, seqNumber, xTRequest,) to all sequencers in [rollups]
 
-Upon receiving a new Vote(chain, xTid, vote):
+Upon receiving a new Vote(id, chain, vote):
     if vote == False:
         Decide(False)
     else:
@@ -201,15 +221,18 @@ Upon receiving a new Vote(chain, xTid, vote):
 Procedure Decide(v):
     if hasDecided == False:
         hasDecided ← True
-        send Decided(xTid, v) to all sequencers of the participating rollups
+        send Decided(id, v) to all sequencers in [rollups]
 
 Upon timer expires and hasDecided == False:
     Decide(False)
 ```
 
-The timer duration should be a configurable value with a default value of 3 seconds.
+The timer duration should be a configurable value with a default of 1 second.
 
-It's important to notice that the protocol doesn't define when a shared publisher should start a protocol instance for a certain cross-chain transaction request. This is abstracted with the `Start` procedure and should be specified in the [superblock construction protocol](./superblock_construction_protocol.md).
+It's important to notice that the protocol does not define when
+the SP should start a protocol instance for a certain request.
+This is abstracted with the `Start` procedure and is specified
+in SBCP.
 
 
 ## Fault Tolerance
@@ -228,7 +251,7 @@ Action (2) can't be prevented, but mitigated with shared publisher rotation.
 
 Immediate possible byzantine actions from the sequencer include:
 1. Tampering the user's request.
-2. Sending a tampered CIRC message.
+2. Sending a tampered Mailbox message.
 3. Sending a `Vote` message with `vote=False` when the transaction is valid.
 4. Sending a `Vote` message with `vote=True` when the transaction is invalid.
 
@@ -249,13 +272,13 @@ sequenceDiagram
     RA->>SP: xTRequest
 
     par Start
-    SP->>RA: StartSC
-    SP->>RB: StartSC
+    SP->>RA: StartInstance
+    SP->>RB: StartInstance
     end
-    # CIRC
-    par CIRC
-        RA->>RB: CIRCMessage
-        RB->>RA: CIRCMessage
+    # Simulation
+    par Simulation
+        RA->>RB: MailboxMessage
+        RB->>RA: MailboxMessage
     end
     # Vote
     par 2PC Vote
@@ -272,9 +295,9 @@ sequenceDiagram
 
 ## Complexity
 
-- **Time complexity** is $D + 3 = O(D)$, where $D$ is maximum dependency degree between CIRC messages. Note that it's **not** the number of *CIRCMessages*. For example, if there are 10 messages but none depend on the other, then $D = 1$.
-- **Message complexity** is $S + M + S + S = O(S + M)$, where $S$ is the number of participating rollups and $M$ is the number of *CIRCMessages*.
-- **Communication complexity** is $O(S\cdot T + M\cdot C)$ where $T$ is the size of the transaction request and $C$ the size of CIRC messages.
+- **Time complexity** is $D + 3 = O(D)$, where $D$ is maximum dependency degree between Mailbox messages. Note that it's **not** the number of *MailboxMessages*. For example, if there are 10 messages but none depend on the other, then $D = 1$.
+- **Message complexity** is $S + M + S + S = O(S + M)$, where $S$ is the number of participating rollups and $M$ is the number of *MailboxMessages*.
+- **Communication complexity** is $O(S\cdot T + M\cdot C)$ where $T$ is the size of the transaction request and $C$ the size of Mailbox messages.
 
 ## References
 
