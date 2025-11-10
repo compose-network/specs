@@ -228,9 +228,17 @@ func (s *sequencer) OnDecidedInstance(id compose.InstanceID) error {
 
 func (s *sequencer) EndBlock(b BlockHeader) error {
 	s.mu.Lock()
+	if s.PendingBlock == nil {
+		s.mu.Unlock()
+		return NoPendingBlock
+	}
 	if s.PendingBlock.Number != b.Number {
 		s.mu.Unlock()
 		return ErrBlockSealMismatch
+	}
+	if s.ActiveInstanceID != nil {
+		s.mu.Unlock()
+		return ErrActiveInstanceExists
 	}
 
 	s.logger.Info().Msg("Ending block")

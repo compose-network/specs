@@ -112,6 +112,19 @@ func TestSequencer_EndBlock_seals_and_updates_head(t *testing.T) {
 	assert.Equal(t, BlockNumber(31), sb.BlockHeader.Number)
 }
 
+func TestSequencer_EndBlock_rejects_active_instance(t *testing.T) {
+	s, _, _ := newSequencerForTest(compose.PeriodID(3), compose.SuperblockNumber(4), mkSettled(1, 30))
+
+	require.NoError(t, s.BeginBlock(31))
+	id := compose.InstanceID{9}
+	require.NoError(t, s.OnStartInstance(id))
+
+	assert.ErrorIs(t, s.EndBlock(mkHeader(31)), ErrActiveInstanceExists)
+
+	require.NoError(t, s.OnDecidedInstance(id))
+	require.NoError(t, s.EndBlock(mkHeader(31)))
+}
+
 func TestSequencer_EndBlock_triggers_prev_period_settlement(t *testing.T) {
 	// Start at period 9, target 10, settled head 40
 	s, p, messenger := newSequencerForTest(compose.PeriodID(9), compose.SuperblockNumber(10), mkSettled(5, 40))
