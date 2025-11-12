@@ -31,7 +31,7 @@ outputs a single ZK proof about the state progress of the entire chain.
 1. Start with [SCP](./synchronous_composability_protocol.md)
 for the basic understanding of how coordination and atomicity are made possible.
 2. Then, continue with [SBCP](./superblock_construction_protocol.md)
-to understand how multiple SCP are managed.
+to understand how multiple SCPs are managed.
 3. Finish with the [settlement layer](./settlement_layer.md)
 to understand how the activity performed during an SBCP period
 is proven in a parallel and efficient manner, to finalize the
