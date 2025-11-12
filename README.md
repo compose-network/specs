@@ -1,78 +1,49 @@
-<!-- This is a comment in Markdown 
 
-🛠 Repository Setup Instructions
-
-After forking or cloning this template, run the following:
-
-1. Replace all occurrences of 'template-repository' with your actual repo name:
-   sed -i 's/template-repository/your-repo-name/g' README.md
-
-2. Fill in all TODO sections below.
-
-3. Update [.github/CODEOWNERS](.github/CODEOWNERS) to reflect your team or maintainers.
-
-4. Check `.gitignore` and `.dockerignore` files and modify them according to your project's structure.
-
-5. Update GitHub Actions in `.github/workflows/` if needed (e.g., rename, add secrets).
-
--->
 <p align="center"><img src="https://framerusercontent.com/images/9FedKxMYLZKR9fxBCYj90z78.png?scale-down-to=512&width=893&height=363" alt="SSV Network"></p>
-
-<img src="https://github.com/ssvlabs/template-repository/actions/workflows/main.yml/badge.svg" alt="Check" />
 <a href="https://discord.com/invite/ssvnetworkofficial"><img src="https://img.shields.io/badge/discord-%23ssvlabs-8A2BE2.svg" alt="Discord" /></a>
 
-## ✨ Introduction
 
-<!-- Describe the purpose of this repository. -->
-This project provides a foundational structure for [describe your use case: e.g., smart contracts, node operators, CLI tools].
+# ✨ Compose Specification
 
-## ⚙️  How to Build
+This repository hosts the canonical specification for
+Compose—a network of rollups that enjoys synchronous, atomic composability through the
+shared publisher architecture.
+Such a feature is achieved by two mechanisms:
+- a simple two-phase commit protocol that provides coordination 
+on the inclusion of a cross-chain transaction.
+- a synchronous settlement pipeline, which finalizes all chains
+simultaneously in L1 with a single ZK proof.
 
-```bash
-# Clone the repo
-git clone https://github.com/ssvlabs/template-repository.git
+To read about the protocol in detail, please check:
+- [Synchronous Composability Protocol (SCP)](./synchronous_composability_protocol.md):
+the fundamental building block that provides coordination
+on a single cross-chain transaction inclusion.
+- [Superblock Construction Protocol (SBCP)](./superblock_construction_protocol.md):
+the orchestration layer that manages multiple SCP instances,
+block construction, and defines the triggering and input for the settlement pipeline.
+- [Settlement Layer](./settlement_layer.md):
+explains the settlement pipeline of Compose,
+picturing the recursive ZK programs architecture which
+outputs a single ZK proof about the state progress of the entire chain.
 
-# Navigate
-cd your-repo-name
+## 📖 Reading Guide
 
-# Install dependencies
-TODO
+1. Start with [SCP](./synchronous_composability_protocol.md)
+for the basic understanding of how coordination and atomicity are made possible.
+2. Then, continue with [SBCP](./superblock_construction_protocol.md)
+to understand how multiple SCP are managed.
+3. Finish with the [settlement layer](./settlement_layer.md)
+to understand how the activity performed during an SBCP period
+is proven in a parallel and efficient manner, to finalize the
+network synchronously.
 
-# Build the code
-TODO
-```
-
-
-## 🚀 How to Run
-
-
-```bash
-# Run the main service
-npm start
-# or
-go run main.go
-# or
-python app.py
-```
-
-## 🧪 Testing
-
-```bash
-npm test
-# or
-go test ./...
-# or
-pytest
-```
-
-
-## Contributing
+## ⚙️ Contributing
 
 We welcome community contributions!
 
-- See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-- Create a branch, push your changes, and open a PR.
+Please open an issue with a detailed description or
+fork the repo, add a branch with your changes, and open a PR.
 
-## License
+## 📜 License
 
 Repository is distributed under [GPL-3.0](LICENSE).
