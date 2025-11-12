@@ -46,4 +46,4 @@ fork the repo, add a branch with your changes, and open a PR.
 
 ## 📜 License
 
-Repository is distributed under [GPL-3.0](LICENSE).
+This repository is distributed under [GPL-3.0](LICENSE).
