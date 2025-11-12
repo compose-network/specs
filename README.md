@@ -9,7 +9,7 @@ This repository hosts the canonical specification for
 Compose—a network of rollups that enjoys synchronous, atomic composability through the
 shared publisher architecture.
 Such a feature is achieved by two mechanisms:
-- a simple two-phase commit protocol that provides coordination 
+- a simple two-phase commit protocol that provides coordination
 on the inclusion of a cross-chain transaction.
 - a synchronous settlement pipeline, which finalizes all chains
 simultaneously in L1 with a single ZK proof.
