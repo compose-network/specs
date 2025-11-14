@@ -96,7 +96,7 @@ The default period duration is 10 Ethereum epochs, i.e. 3840 seconds.
 Periods are counted from a **genesis** time.
 Thus, the period $k$ starts at:
 
-```PeriododStart(k) = GenesisTime + k * PERIOD_DURATION```
+```PeriodStart(k) = GenesisTime + k * PERIOD_DURATION```
 
 Notes:
 - Rollups keep independent L2 block times; only period boundaries are common.
