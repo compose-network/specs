@@ -77,7 +77,7 @@ func TestSequencer_CanIncludeLocalTx_and_InstanceHooks(t *testing.T) {
 
 	// Start instance -> now blocked
 	var id compose.InstanceID = compose.InstanceID{1}
-	require.NoError(t, s.OnStartInstance(id))
+	require.NoError(t, s.OnStartInstance(id, s.PeriodID, compose.SequenceNumber(1)))
 	ok, err = s.CanIncludeLocalTx()
 	require.NoError(t, err)
 	assert.False(t, ok)
@@ -117,7 +117,7 @@ func TestSequencer_EndBlock_rejects_active_instance(t *testing.T) {
 
 	require.NoError(t, s.BeginBlock(31))
 	id := compose.InstanceID{9}
-	require.NoError(t, s.OnStartInstance(id))
+	require.NoError(t, s.OnStartInstance(id, s.PeriodID, compose.SequenceNumber(1)))
 
 	assert.ErrorIs(t, s.EndBlock(mkHeader(31)), ErrActiveInstanceExists)
 
@@ -257,7 +257,7 @@ func TestSequencer_Rollback_discards_newer_and_resets(t *testing.T) {
 	// Open and set an active instance to ensure they are cleared
 	require.NoError(t, s.BeginBlock(101))
 	id := compose.InstanceID{7}
-	require.NoError(t, s.OnStartInstance(id))
+	require.NoError(t, s.OnStartInstance(id, s.PeriodID, compose.SequenceNumber(1)))
 
 	head, err := s.Rollback(4, settled.SuperblockHash, compose.PeriodID(12))
 	require.NoError(t, err)
@@ -272,4 +272,45 @@ func TestSequencer_Rollback_discards_newer_and_resets(t *testing.T) {
 	// Period and target updated
 	assert.Equal(t, compose.PeriodID(12), s.PeriodID)
 	assert.Equal(t, compose.SuperblockNumber(5), s.TargetSuperblockNumber)
+}
+
+func TestSequencer_OnStartInstance_validations(t *testing.T) {
+	t.Run("rejects when no pending block", func(t *testing.T) {
+		s, _, _ := newSequencerForTest(compose.PeriodID(3), compose.SuperblockNumber(4), mkSettled(1, 30))
+		// No BeginBlock
+		err := s.OnStartInstance(compose.InstanceID{1}, s.PeriodID, compose.SequenceNumber(1))
+		require.ErrorIs(t, err, NoPendingBlock)
+	})
+
+	t.Run("rejects when period mismatch (higher)", func(t *testing.T) {
+		s, _, _ := newSequencerForTest(compose.PeriodID(5), compose.SuperblockNumber(6), mkSettled(2, 40))
+		require.NoError(t, s.BeginBlock(41))
+		err := s.OnStartInstance(compose.InstanceID{2}, s.PeriodID+1, compose.SequenceNumber(1))
+		require.ErrorIs(t, err, ErrPeriodIDMismatch)
+	})
+
+	t.Run("rejects when period mismatch (lower)", func(t *testing.T) {
+		s, _, _ := newSequencerForTest(compose.PeriodID(7), compose.SuperblockNumber(8), mkSettled(3, 50))
+		require.NoError(t, s.BeginBlock(51))
+		err := s.OnStartInstance(compose.InstanceID{3}, s.PeriodID-1, compose.SequenceNumber(1))
+		require.ErrorIs(t, err, ErrPeriodIDMismatch)
+	})
+
+	t.Run("enforces strictly increasing sequence numbers", func(t *testing.T) {
+		s, _, _ := newSequencerForTest(compose.PeriodID(9), compose.SuperblockNumber(10), mkSettled(4, 60))
+		require.NoError(t, s.BeginBlock(61))
+		// First instance with seq=1
+		require.NoError(t, s.OnStartInstance(compose.InstanceID{4}, s.PeriodID, compose.SequenceNumber(1)))
+		// Cannot start another instance while active
+		require.ErrorIs(t, s.OnStartInstance(compose.InstanceID{5}, s.PeriodID, compose.SequenceNumber(1)), ErrActiveInstanceExists)
+		// Finish current
+		require.NoError(t, s.OnDecidedInstance(compose.InstanceID{4}))
+		// Reject the same sequence number
+		require.ErrorIs(t, s.OnStartInstance(compose.InstanceID{6}, s.PeriodID, compose.SequenceNumber(1)), ErrLowSequencerNumber)
+		// Accept the higher sequence number
+		require.NoError(t, s.OnStartInstance(compose.InstanceID{7}, s.PeriodID, compose.SequenceNumber(2)))
+		require.NoError(t, s.OnDecidedInstance(compose.InstanceID{7}))
+		// Reject the lower sequence number
+		require.ErrorIs(t, s.OnStartInstance(compose.InstanceID{6}, s.PeriodID, compose.SequenceNumber(1)), ErrLowSequencerNumber)
+	})
 }

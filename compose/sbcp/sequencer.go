@@ -19,6 +19,8 @@ var (
 	ErrNoActiveInstance         = errors.New("no active instance")
 	ErrActiveInstanceMismatch   = errors.New("mismatched active instance ID")
 	ErrMismatchedFinalizedState = errors.New("mismatched finalized state")
+	ErrPeriodIDMismatch         = errors.New("instance period ID does not match current block period ID")
+	ErrLowSequencerNumber       = errors.New("instance sequence number is not greater than last sequence number")
 )
 
 type Sequencer interface {
@@ -42,7 +44,7 @@ type Sequencer interface {
 	// CanIncludeLocalTx return whether a local tx is admissible right now.
 	CanIncludeLocalTx() (include bool, err error)
 	// OnStartInstance is an SCP start-up hook. Locks local txs from being added (internal logic).
-	OnStartInstance(id compose.InstanceID) error
+	OnStartInstance(id compose.InstanceID, periodID compose.PeriodID, sequenceNumber compose.SequenceNumber) error
 	// OnDecidedInstance is an SCP decision hook. Unlocks local txs (internal logic).
 	OnDecidedInstance(id compose.InstanceID) error
 	// EndBlock: hook for when block ends
@@ -65,8 +67,9 @@ type SequencerState struct {
 	TargetSuperblockNumber compose.SuperblockNumber // from StartPeriod.target_superblock_number
 
 	// PendingBlock represents the block being built.
-	PendingBlock     *PendingBlock
-	ActiveInstanceID *compose.InstanceID // nil if no active instance
+	PendingBlock       *PendingBlock
+	ActiveInstanceID   *compose.InstanceID     // nil if no active instance
+	LastSequenceNumber *compose.SequenceNumber // nil if no started instance in this period
 
 	// Head represents the highest sealed block number.
 	Head BlockNumber
@@ -101,6 +104,7 @@ func NewSequencer(
 			TargetSuperblockNumber: targetSuperblock,
 			PendingBlock:           nil,
 			ActiveInstanceID:       nil,
+			LastSequenceNumber:     nil,
 			Head:                   settledState.BlockHeader.Number,
 			SealedBlockHead:        make(map[compose.PeriodID]SealedBlockHeader),
 			SettledState:           settledState,
@@ -129,6 +133,7 @@ func (s *sequencer) StartPeriod(
 
 	s.PeriodID = periodID
 	s.TargetSuperblockNumber = targetSuperblockNumber
+	s.LastSequenceNumber = nil
 
 	s.mu.Unlock()
 
@@ -195,7 +200,7 @@ func (s *sequencer) CanIncludeLocalTx() (bool, error) {
 }
 
 // OnStartInstance sets an active instance, locking local tx inclusion (SCP start-up hook).
-func (s *sequencer) OnStartInstance(id compose.InstanceID) error {
+func (s *sequencer) OnStartInstance(id compose.InstanceID, periodID compose.PeriodID, sequenceNumber compose.SequenceNumber) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.PendingBlock == nil {
@@ -204,6 +209,19 @@ func (s *sequencer) OnStartInstance(id compose.InstanceID) error {
 	if s.ActiveInstanceID != nil {
 		return ErrActiveInstanceExists
 	}
+
+	if s.PendingBlock.PeriodID != periodID {
+		return ErrPeriodIDMismatch
+	}
+
+	if s.LastSequenceNumber != nil {
+		if sequenceNumber <= *s.LastSequenceNumber {
+			return ErrLowSequencerNumber
+		}
+	}
+
+	s.LastSequenceNumber = &sequenceNumber
+
 	s.logger.Info().
 		Msg("Starting active instance, locking local tx inclusion")
 	s.ActiveInstanceID = &id
