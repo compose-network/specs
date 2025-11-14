@@ -35,8 +35,10 @@ Compose’s proposed modules do not fully specify every layer of a rollup.
 This is intentional: we provide minimal integrable modules,
 so each rollup retains sovereignty over choices like data availability logic,
 local transaction priority ordering, batching logic, and related pipeline details.
-As a default, we use the [OP](https://docs.optimism.io/concepts/stack/getting-started) + [OP‑Succinct](https://github.com/succinctlabs/op-succinct/tree/main) stack,
+As a default, we use a modified [OP](https://docs.optimism.io/concepts/stack/getting-started) + [OP‑Succinct](https://github.com/succinctlabs/op-succinct/tree/main) stack,
 currently supporting the [Isthmus hard fork](https://docs.optimism.io/concepts/stack/network-upgrades).
+
+Read our [tutorial](https://github.com/compose-network/contracts/blob/develop/L1-settlement/README.md) for more details on rollup migration.
 
 ## 💡 Contributing
 
