@@ -241,7 +241,7 @@ in order for the mailbox states to be consistent, chain B
 must also have executed the requests $(r_1, r_2, r_3)$ in the same order.
 If B started the settlement pipeline with its state updated only by $(r_1, r_2)$
 (or in a different order like $(r_2, r_1, r_3)$),
-then the consistency check would B.
+then the consistency check would fail.
 
 That's the goal of the SBCP: to make sure sequencers start the settlement pipeline
 at common states.
