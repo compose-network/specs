@@ -3,7 +3,7 @@
 ## Table of Contents <!-- omit from toc -->
 
 - [Mechanism](#mechanism)
-- [Batch Synchronization](#batch-synchronization)
+- [Protocol Integration and Cross-State Synchronization](#protocol-integration-and-cross-state-synchronization)
 - [Superblock](#superblock)
 - [Superblock Validation Rules](#superblock-validation-rules)
 - [Contract](#contract)
@@ -37,31 +37,27 @@ The transformation to a SNARK proof is important as it can be efficiently verifi
 This mechanism will be adjusted so that sequencers can also prove their mailbox activity regarding other chains.
 Moreover, the SP will execute a final ZK program that verifies each L2 batch proof and the consistency in mailbox activity.
 
-## Batch Synchronization
-
-| Config Field | Value |
-|--------|-------|
-| Block Time | 12 seconds |
-| Ethereum Epochs Batch Factor | 10<br>(batch is triggered whenever Mod(Curr Eth Epoch, 10) == 0) |
+## Protocol Integration and Cross-State Synchronization
 
 The settlement mechanism proves activity for a batch of blocks.
-Therefore, sequencers must be synchronized on when a batch starts and ends.
-For that, rollups will maintain common block time and batching logic.
-
-Block time is set to 12 seconds according to the [SBCP](./superblock_construction_protocol.md) protocol.
-
-Batch is synchronized according to Ethereum epochs, i.e. Ethereum is used as a common clock.
-Each sequencer continuously listens to L1 epochs and sets a new batch to start whenever the current L1 epoch number is divisible by 10.
-Once a new batch starts, the proving pipeline (described next) starts for the previous batch.
-Note that this defines a batch in terms of time, and not in a number of blocks.
-Thus, even if a rollup misses a block, it will still prove its batch for the correct time window.
+Therefore, sequencers must be synchronized on when a batch starts and ends,
+and, most importantly, on which cross-chain transactions belong to a certain batch.
+This is accomplished by the [SBCP](./superblock_construction_protocol_v2.md)
+protocol.
 
 > [!TIP]
-> Why is such synchronization necessary?<br>
-> Suppose two rollups have the same block time but different batching trigger logic.
+> Why is such synchronization necessary? <br>
+> Suppose two rollups with the same block time but different batching trigger logics.
 > For example, suppose rollup A creates block X and rollup B creates block Y, both in the same slot.
 > However, A proves the range [X-B, X] while B proves the range [Y+1-B, Y+1].
 > Once mailbox consistency is checked, the mailbox state of B will be slightly more advanced than A's, and thus the mailbox consistency check may fail.
+
+As described in the [SBCP](./superblock_construction_protocol_v2.md) document,
+sequencers start the settlement pipeline locally once the
+last block for a period is produced.
+Once the proof is generated, it's sent to the SP, via the `Proof` message,
+who then runs its ZK program to aggregate all proofs
+and publishes the final superblock proof on L1.
 
 ## Superblock
 
@@ -154,12 +150,11 @@ If the proof is valid, the contract updates its state to the new superblock.
 ## Protocol
 
 Again, we highlight that for scalability purposes and following the op-succinct framework standards,
-a proof is generated for a batch of slots, rather than for a single slot transition,
-as described in the [Batch Synchronization](#batch-synchronization) section.
+a proof is generated for a batch of slots, rather than for a single slot transition.
 
 ### 1. Range Program
 
-Once the batching trigger is hit, each sequencer produces a STARK ZKP for its batch of L2 blocks.
+Once the settlement pipeline is triggered, each sequencer produces a STARK ZKP for its batch of L2 blocks.
 
 From the op-succinct framework, this is accomplished by a [ZK Range program](https://github.com/succinctlabs/op-succinct/blob/b6a67787ba53b8f8251ce8b3ffaf0fe2d0d1294f/programs/range/ethereum/src/main.rs#L19).
 It takes as input a rkyv-serialized [`DefaultWitnessData`](https://github.com/succinctlabs/op-succinct/blob/b6a67787ba53b8f8251ce8b3ffaf0fe2d0d1294f/utils/client/src/witness/mod.rs#L45-L48) object which contains:
@@ -205,7 +200,7 @@ flowchart LR
 ```
 
 Informally, this program's proof states:
-> *I know, for the rollup with config hash `rollupConfigHash`,
+> I know, for the rollup with config hash `rollupConfigHash`,
 > a sequence of valid L2 blocks such that the first block of this list has pre-root `l2PreRoot`,
 > the last block of this list has post-root `l2PostRoot` and number `l2BlockNumber`,
 > the latest L1 head is `l1Head`,
