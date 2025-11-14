@@ -141,7 +141,7 @@ State Variables:
 **Initialization**
 
 A rollup registers to the registry contract defining a genesis L2 block, its sequencer public key and endpoint, and its starting slot.
-The sequencer initializes its [state](#state) in the `Waiting` state.
+The sequencer initializes its state in the `Waiting` state.
 
 **`Waiting`**
 
@@ -589,14 +589,14 @@ Next, we list several scenarios in which a sequencer may crash and what is the e
 
 | Scenario | Effect |
 | --- | --- |
-**1. Crash before receiving `StartSlot`** | System runs normally, and Superblock is constructed without a block for this chain. |
-**2. Crash in `Building-Free` before any `StartSC`** | System runs normally, but the next Superblock may or may not be produced. |
-**3. Crash in `Building-Locked` before sending `Vote`** | SP will decide not to include, the system will run normally but the next Superblock may or may not be produced.|
-**4. Crash after sending `Vote` but before receiving `Decided`** | System runs normally, but the next Superblock may or may not be produced. |
-**5. Crash after `Decided` but before `RequestSeal`** | System runs normally, but the next Superblock may or may not be produced. |
-**6. Crash during `Submission` (while encoding/sending L2Block)** | A Superblock may or may not be constructed. In any case, chain blocks will only get published after the sequencer resumes and receives the first `StartSlot`. The recovery mechanism may be used. |
-**7. Crash after sending `L2Block` but before persisting it** | A Superblock may or may not be constructed. In any case, chain blocks will only get published after the sequencer resumes and receives the first `StartSlot`. The recovery mechanism may be used. |
-**8. Crash during `RollBackAndStartSlot` handling** | Normal flow will be restored after the sequencer resumes and receives the first `StartSlot`. |
+|**1. Crash before receiving `StartSlot`** | System runs normally, and Superblock is constructed without a block for this chain. |
+|**2. Crash in `Building-Free` before any `StartSC`** | System runs normally, but the next Superblock may or may not be produced. |
+|**3. Crash in `Building-Locked` before sending `Vote`** | SP will decide not to include, the system will run normally but the next Superblock may or may not be produced.|
+|**4. Crash after sending `Vote` but before receiving `Decided`** | System runs normally, but the next Superblock may or may not be produced. |
+|**5. Crash after `Decided` but before `RequestSeal`** | System runs normally, but the next Superblock may or may not be produced. |
+|**6. Crash during `Submission` (while encoding/sending L2Block)** | A Superblock may or may not be constructed. In any case, chain blocks will only get published after the sequencer resumes and receives the first `StartSlot`. The recovery mechanism may be used. |
+|**7. Crash after sending `L2Block` but before persisting it** | A Superblock may or may not be constructed. In any case, chain blocks will only get published after the sequencer resumes and receives the first `StartSlot`. The recovery mechanism may be used. |
+|**8. Crash during `RollBackAndStartSlot` handling** | Normal flow will be restored after the sequencer resumes and receives the first `StartSlot`. |
 
 **SP Failures**
 
@@ -664,7 +664,7 @@ The graph $G$ may be constructed statically (via static analysis) or dynamically
 
 The following is an example graph in which $f^{LT} = g$ is independent to $\{f^{xT}_1, f^{xT}_2\}$. Note that $f^{xT}_1$ and $f^{xT}_2$ are not independent, though it doesn't impact the result that the set is independent to $f^{LT}$.
 
-![function_dependency](./images/function_dependency.png)
+![function_dependency](images/sbcp/function_dependency.png)
 
 ## Future work
 

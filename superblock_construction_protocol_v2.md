@@ -19,12 +19,12 @@ Notice that, while the publisher orchestrates the settlement progression
 and input, the L1 contract is responsible for the validity and security of
 the state updates.
 
-Note that the SCP and settlement protocols will be used as building blocks for the SBCP.
+Note that the SCP and settlement protocols are used as building blocks for SBCP.
 
-![sbcp](./images/sbcp.png)
+![sbcp](images/sbcp/sbcp.png)
 
 > [!TIP]
-> If you prefer to first read an informal intuition about the protocol,
+> If you prefer to first read an informal intuition explanation about the protocol,
 > please read the [SBCP v2 Informal Intuition](#informal-intuition) section.
 
 ## Table of Contents
@@ -35,7 +35,7 @@ Note that the SCP and settlement protocols will be used as building blocks for t
 - [Time And Periods](#time-and-periods)
 - [Protocol](#protocol)
   - [Messages](#messages)
-  - [Shared Publisher](#shared-publisher)
+  - [Shared Publisher](#shared-publisher-sp)
   - [Sequencer](#sequencer)
 - [Informal Intuition](#informal-intuition)
 
@@ -55,16 +55,16 @@ In contrast, V1 could roll back every 12 seconds, due to temporary bad network c
 
 ## System Model
 
-Actors and roles:
-- Shared Publisher (SP): the coordinator that schedules composability instance
+**Actors and roles**:
+- **Shared Publisher (SP)**: the coordinator that schedules composability instance
 and triggers period update and the settlement pipeline.
-- Native Sequencers: one per rollup, who builds L2 blocks at a self-chosen frequency,
+- **Native Sequencers**: one per rollup, who builds L2 blocks at a self-chosen frequency,
 participates in composability when instructed, and produces proofs about its blocks and mailbox activity.
 
-Communication:
+**Communication**:
 - Authenticated, partially synchronous channels between any two actors.
 
-Fault model:
+**Fault model**:
 - Crash faults for sequencers, while the SP must be live to guarantee termination. 
 - Byzantine misbehavior is mitigated by ZK settlement checks (mailbox consistency, range/aggregation proofs)
 and by protocol enforcement (e.g., mailbox contract),
@@ -99,9 +99,9 @@ Thus, the period $k$ starts at:
 ```PeriodStart(k) = GenesisTime + k * PERIOD_DURATION```
 
 Notes:
-- Rollups keep independent L2 block times; only period boundaries are common.
-- Rollups will be abstracted from the period time logic,
-while the SP will trigger them via a start message, as described below.
+- Rollups may keep independent L2 block times; only period boundaries are common.
+- Still, rollups are abstracted from the period time logic
+since the SP will trigger them via a start message, as described below.
 
 ## Protocol
 
@@ -159,70 +159,168 @@ message Proof {
 > they also appear here as the SBCP's hook to start/finish SCP instances.
 
 
-### Shared Publisher
+### Shared Publisher (SP)
 
-The SP is the coordinator of the protocol, keeping track of the current period and
-broadcasting an `StartPeriod` message whenever a new period starts.
+The SP is the coordinator of the protocol, managing
+the initiation of periods and composability instances,
+and controlling rollbacks when necessary.
 
+**Period Management**
+
+The SP tracks the current period and
+broadcasts an `StartPeriod` message whenever a new period starts.
 The `StartPeriod` message carries the new period ID as well as
-the number of the superblock number that will be built for the next period.
+the superblock number that will be built in such a new period.
 
-During a period, the SP will initiate composability instances.
+![start_period](images/sbcp/start_period.png)
+
+Note that in the above figure, the next superblock number to be built started from 1
+as it's assumed that there is agenesis superblock 0.
+
+Also, note that, even though in the figure the superblock is always the period number plus 1,
+this relation doesn't necessarily hold. I.e., the period ID doesn't fully determine
+the superblock number and so it isn't redundant.
+This happens due to the possibility of rollbacks, which may
+revert to a previous superblock number, even though
+the period ID is always monotonically increasing.
+
+**Composability Management**
+
 Users' requests are represented by `XTRequest`.
 They can either be directly sent to the SP
 who will put it in the queue and schedule it,
 or the user can send it to a sequencer, who will simply forward it to the SP.
 
-On the one hand, the publisher implementation layer is responsible for managing the queue,
-having the flexibility to implement different policies.
-On the other hand, the spec will restrict whether an instance can be started or not.
-For that, it holds the set of active chains that are currently participating
-in a composability instance, updating the set whenever an instance starts or terminates.
+![xtrequest](images/sbcp/xtrequest.png)
 
-For each period, the SP holds a sequence number indicating the order
-of a composability instance initiated in the current period.
-Upon starting a new period, the sequence number is reset to 0.
-The sequence number helps sequencers know the chronological order
-of instances and manage messages appropriately, if needed.
+During a period, the SP initiates multiple composability instances.
+Each starting instance is tagged with the current period ID and
+a sequence number, a monotonically increasing counter which
+resets at the beginning of each period.
+Furthermore, it includes a unique identifier for this instance,
+`instance_id`, which is computed as $H(period\_id || sequence\_number || XTRequest)$,
+where $H$ is the SHA-256 cryptographic hash function.
+Note that, in case a request fails and the user retries it
+with the exact same data (accounts' nonces, etc.),
+the `instance_id` will change as it depends on both
+the period ID and the sequence number.
 
-Each instance is identified by an `InstanceID` computed as the hash
-of the period ID, its sequence number, and the `XTRequest` that triggered it,
-i.e. `InstanceID = H(period_id || seq || XTRequest)`.
+![start_instance](images/sbcp/start_instance.png)
+
+Such as local transactions are processed sequentially by the EVM,
+cross-chain transactions also should be isolated from other transactions.
+During an instance,
+neither local transactions can be processed (as described next in the
+sequencer section) nor other composability instances can be started.
+Thus, the SP must ensure that no two instances overlap in terms of participating chains.
+For that, it holds the set of active chains (i.e., those currently participating in an instance)
+and updates it according to instance starts and terminations.
+
+```pseudocode
+can_start_instance(active_chains, xt_request):
+    req_chains = xt_request.get_chains()
+    if any chain in req_chains is in active_chains:
+        return False
+    else:
+        return True
+```
+
+The protocol is flexible regarding queue management of pending
+requests and whatever priority policy is desired.
+Still, whenever implementation wants to start a new instance,
+the spec restricts whether it can be started or not,
+according to the function above.
+
+**Settlement Management**
 
 Once a period finishes, the SP starts the settlement pipeline for
 the superblock associated with it,
 along with a timer with `ProofWindow` duration.
 
-During the settlement protocol, each rollup will produce a proof and
+According to the settlement protocol, each rollup will produce a proof and
 send it to the SP via the `Proof` message.
 Once the SP collects all proofs, it produces the network proof and
 publishes it to L1. Once the associated L1 event is received,
 the SP updates its settled state.
 
-In case the timer expires and it hasn't yet produced the network proof,
+![proof](images/sbcp/proof.png)
+
+In case the timer expires, and it hasn't yet produced the network proof,
 or in case the settlement pipeline fails (e.g., due to invalid proofs),
 the SP will broadcast a `Rollback` message
-with the last finalized superblock number and hash,
+with the current period ID and
+the last finalized superblock number and hash,
 resetting the network to it.
+
+![rollback](images/sbcp/rollback.png)
+
+Note that, in the above scenario, the period ID keeps increasing,
+though the network rolls back to a previous superblock number $S$,
+and builds $S+1$ again in the next period.
 
 ### Sequencer
 
-Whenever a sequencer is participating in a composability instance,
-it must not process local transactions nor start other instances.
-For that, the sequencer will keep track of a flag to indicate
-whether it's currently active on an instance.
+**Period and Settlement Management**
 
-The sequencer receives the `StartPeriod` message from the SP, indicating
-that a new period has started.
-As soon as it closes the last block from the previous period,
-it will start the settlement pipeline for it.
-Once a proof is generated, the sequencer sends it to the SP.
+The sequencer receives the `StartPeriod` message from the SP and keeps track
+locally of the current period ID and the next superblock number to be built.
+Once a new period starts, it should start the settlement pipeline for the previous period
+as soon as the last block that belongs to it is closed.
 
-Once a `Rollback` message is received from the SP,
-the sequencer rolls back to the last finalized state
-which is updated with L1 events and should coincide with
-the message's content.
+![seq_proof](images/sbcp/seq_proof.png)
 
+Note that the settlement isn't started as soon
+as the `StartPeriod` message is received,
+but rather once the last block that
+was created during the previous period is closed.
+
+Once a proof is generated, the sequencer sends it to the SP
+via the `Proof` message.
+
+The sequencer also keeps track of the last finalized superblock
+by listening to L1 events.
+In case the SP starts a rollback, via the `Rollback` message,
+the sequencer reverts its local state,
+setting the head to its last finalized block
+(included in the last finalized superblock),
+and updates the period ID and next superblock number according
+to the message's content.
+
+**Block Building & Instance Policy**
+
+The sequencer builds L2 blocks at its own frequency.
+Whenever a block is created, it adds a tag for it with
+the current period ID and superblock number,
+so that it's included in the settlement of such a superblock.
+This tag never changes throughout the block's life.
+
+Note, however, that in the case of rollbacks, these unfinalized blocks
+are dropped along with their tags, and new blocks (with already seen
+block numbers and pre-state roots) may be re-created
+with new tags.
+
+Whenever a sequencer receives a `StartInstance` message,
+it should start the instance and stop processing local transactions
+to preserve EVM isolation.
+It only re-enables local transaction processing once
+the current instance ends, by a `Decided` message or due to a `Vote(0)`.
+
+There are edge conditions by which the sequencer may reject
+the instance, immediately aborting it via a `Vote(0)`
+message. These include:
+1. If it receives the message for an older period or sequence number.
+2. If the period ID is higher than the current block's period ID (edge case in
+which the period advanced, but the last block for the previous period
+is still being built).
+3. If it already has an active instance.
+
+In case the SP is honest, the third scenario should only happen
+due to network delays (e.g., a `Decided` message gets delayed
+and the next `StartInstance` arrives before it).
+To mitigate such issues, implementation can
+include standard message delivery management techniques,
+which smartly buffer messages and deliver them to the
+app in the appropriate order.
 
 
 ## Informal Intuition
@@ -247,5 +345,5 @@ That's the goal of the SBCP: to make sure sequencers start the settlement pipeli
 at common states.
 
 Besides this, because rollups can't participate in more than one composability instance
-at a time (due to EVM sequentiality and instance isolation), SBCP must also enforce that.
+at a time (due to EVM sequentiality and instance isolation), SBCP must also enforce such isolation.
 This logic should exist in the SP who starts and manages the instances.
