@@ -51,7 +51,7 @@ SBCP v1 was using another concept of a *superblock*, which was produced every 12
 which was strictly sequential in SBCP v1.
 - Align rollback logic to failure of the proof pipeline.
 In contrast, V1 could roll back every 12 seconds, due to temporary bad network conditions. 
-- Allow rollups to keep sovereignty over the DA layer, instead of making the SP responsible for it.
+- Allow rollups to keep sovereignty over the DA layer instead of making the SP responsible for it.
 
 ## System Model
 
@@ -79,7 +79,7 @@ though it's not covered here and should be treated in a later version.
 - **Sequentiality**: For any rollup, composability instances are executed one at a time (no overlap).
 
 **Liveness** (under partial synchrony and live SP)
-- **Superblock Progress**: Eventually, every superblock produced during a period is finalized or discarded and a rollback is triggered. 
+- **Superblock Progress**: Eventually, every superblock produced during a period is finalized or discarded, and a rollback is triggered. 
 
 ## Time And Periods
 
@@ -91,7 +91,7 @@ though it's not covered here and should be treated in a later version.
 
 SBCP v2 groups composability instances into long time periods, aligned with the usual settlement cadence.
 
-The default period duration is 10 Ethereum epochs, i.e. 3840 seconds.
+The default period duration is 10 Ethereum epochs, i.e., 3840 seconds.
 
 Periods are counted from a **genesis** time.
 Thus, the period $k$ starts at:
@@ -107,7 +107,7 @@ since the SP will trigger them via a start message, as described below.
 
 ### Messages
 
-```protobuf
+```protobuf3
 // Internal
 message TransactionRequest {
   uint64 chain_id = 1;
@@ -191,7 +191,7 @@ They can either be directly sent to the SP
 who will put it in the queue and schedule it,
 or the user can send it to a sequencer, who will simply forward it to the SP.
 
-![xtrequest](images/sbcp/xtrequest.png)
+![xt_request](images/sbcp/xtrequest.png)
 
 During a period, the SP initiates multiple composability instances.
 Each starting instance is tagged with the current period ID and
@@ -255,7 +255,7 @@ resetting the network to it.
 ![rollback](images/sbcp/rollback.png)
 
 Note that, in the above scenario, the period ID keeps increasing,
-though the network rolls back to a previous superblock number $S$,
+though the network rolls back to a previous superblock number $S$
 and builds $S+1$ again in the next period.
 
 ### Sequencer
