@@ -104,7 +104,7 @@ Every created Mailbox message should be sent to the sequencer of the message's d
 If the execution result is an error due to a missing message in a Mailbox read operation, the sequencer waits for such a message.
 Whenever a new Mailbox message is received and expected by the transactions, the sequencer adds an auxiliary transaction (`mailbox.putInbox`) that populates the mailbox with the received message and tries the whole process again.
 The sequencer only terminates this phase on 2 conditions:
-1. Once the simulation returns a successful or failure execution results, with the failure not caused by the Mailbox.
+1. Once the simulation returns a successful or failure execution result, with the failure not caused by the Mailbox.
 2. Local timer expires.
 
 Once the sequencer terminates the simulation phase and knows the transaction's execution result, it sends a `Vote` message to the shared publisher with a flag indicating whether it can include the transaction or not.
