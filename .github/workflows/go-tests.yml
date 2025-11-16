@@ -1,0 +1,27 @@
+name: Go Unit Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: compose
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: compose/go.mod
+          check-latest: true
+
+      - name: Run unit tests
+        run: go test ./...
