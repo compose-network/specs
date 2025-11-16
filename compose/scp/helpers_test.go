@@ -51,7 +51,7 @@ func (e *fakeExecutionEngine) ChainID() compose.ChainID { return e.id }
 func (e *fakeExecutionEngine) Simulate(req SimulationRequest) (*MailboxMessageHeader, []MailboxMessage, error) {
 	e.lastReq = SimulationRequest{
 		PutInboxMessages: append([]MailboxMessage(nil), req.PutInboxMessages...),
-		Transactions:     cloneByteSlices(req.Transactions),
+		Transactions:     compose.CloneByteSlices(req.Transactions),
 		Snapshot:         req.Snapshot,
 	}
 	if e.calls < len(e.steps) {
@@ -92,7 +92,7 @@ func cloneXTRequest(req compose.XTRequest) compose.XTRequest {
 	for i, tr := range req.Transactions {
 		out.Transactions[i] = compose.TransactionRequest{
 			ChainID:      tr.ChainID,
-			Transactions: cloneByteSlices(tr.Transactions),
+			Transactions: compose.CloneByteSlices(tr.Transactions),
 		}
 	}
 	return out

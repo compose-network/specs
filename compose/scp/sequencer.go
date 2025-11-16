@@ -143,7 +143,7 @@ func (r *sequencerInstance) Run() error {
 	// Run simulation
 	readRequest, writeMessages, err := r.execution.Simulate(SimulationRequest{
 		PutInboxMessages: append([]MailboxMessage(nil), r.putInboxMessages...),
-		Transactions:     cloneByteSlices(r.txs),
+		Transactions:     compose.CloneByteSlices(r.txs),
 		Snapshot:         r.vmSnapshot,
 	})
 	if err != nil {
@@ -198,21 +198,6 @@ func (r *sequencerInstance) sendWriteMessages(messages []MailboxMessage) {
 		r.network.SendMailboxMessage(msg.MailboxMessageHeader.DestChainID, msg)
 		r.writtenMessagesCache = append(r.writtenMessagesCache, msg)
 	}
-}
-
-func cloneByteSlices(src [][]byte) [][]byte {
-	if src == nil {
-		return nil
-	}
-	out := make([][]byte, len(src))
-	for i, b := range src {
-		if b == nil {
-			out[i] = nil
-			continue
-		}
-		out[i] = append([]byte(nil), b...)
-	}
-	return out
 }
 
 // consumeReceivedMailboxMessagesAndSimulate checks if any expected read mailbox messages have been received
