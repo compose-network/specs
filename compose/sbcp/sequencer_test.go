@@ -229,7 +229,7 @@ func TestSequencer_Rollback_rejects_if_mismatch(t *testing.T) {
 	settled := mkSettled(4, 100)
 	s, _, _ := newSequencerForTest(compose.PeriodID(9), compose.SuperblockNumber(10), settled)
 
-	_, err := s.Rollback(5, compose.SuperBlockHash{9}, compose.PeriodID(9))
+	_, err := s.Rollback(5, compose.SuperblockHash{9}, compose.PeriodID(9))
 	require.ErrorIs(t, err, ErrMismatchedFinalizedState)
 }
 

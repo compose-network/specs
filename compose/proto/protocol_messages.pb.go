@@ -531,12 +531,12 @@ func (x *Decided) GetDecision() bool {
 // Direct Mailbox message exchange between sequencers (without SP involvement)
 type MailboxMessage struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId       []byte                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"` // Instance ID
-	SourceChain      uint64                 `protobuf:"varint,2,opt,name=source_chain,json=sourceChain,proto3" json:"source_chain,omitempty"`
-	DestinationChain uint64                 `protobuf:"varint,3,opt,name=destination_chain,json=destinationChain,proto3" json:"destination_chain,omitempty"`
-	Source           []byte                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
-	Receiver         []byte                 `protobuf:"bytes,5,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	SessionId        uint64                 `protobuf:"varint,6,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionId        uint64                 `protobuf:"varint,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	InstanceId       []byte                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	SourceChain      uint64                 `protobuf:"varint,3,opt,name=source_chain,json=sourceChain,proto3" json:"source_chain,omitempty"`
+	DestinationChain uint64                 `protobuf:"varint,4,opt,name=destination_chain,json=destinationChain,proto3" json:"destination_chain,omitempty"`
+	Source           []byte                 `protobuf:"bytes,5,opt,name=source,proto3" json:"source,omitempty"`
+	Receiver         []byte                 `protobuf:"bytes,6,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	Label            string                 `protobuf:"bytes,7,opt,name=label,proto3" json:"label,omitempty"`
 	Data             [][]byte               `protobuf:"bytes,8,rep,name=data,proto3" json:"data,omitempty"` // ABI encoded data
 	unknownFields    protoimpl.UnknownFields
@@ -573,6 +573,13 @@ func (*MailboxMessage) Descriptor() ([]byte, []int) {
 	return file_protocol_messages_proto_rawDescGZIP(), []int{9}
 }
 
+func (x *MailboxMessage) GetSessionId() uint64 {
+	if x != nil {
+		return x.SessionId
+	}
+	return 0
+}
+
 func (x *MailboxMessage) GetInstanceId() []byte {
 	if x != nil {
 		return x.InstanceId
@@ -606,13 +613,6 @@ func (x *MailboxMessage) GetReceiver() []byte {
 		return x.Receiver
 	}
 	return nil
-}
-
-func (x *MailboxMessage) GetSessionId() uint64 {
-	if x != nil {
-		return x.SessionId
-	}
-	return 0
 }
 
 func (x *MailboxMessage) GetLabel() string {
@@ -743,6 +743,67 @@ func (x *Rollback) GetLastFinalizedSuperblockHash() []byte {
 	return nil
 }
 
+// Message sent by sequencers to SP containing their proof for a superblock
+type Proof struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	PeriodId         uint64                 `protobuf:"varint,1,opt,name=period_id,json=periodId,proto3" json:"period_id,omitempty"`
+	SuperblockNumber uint64                 `protobuf:"varint,2,opt,name=superblock_number,json=superblockNumber,proto3" json:"superblock_number,omitempty"`
+	ProofData        []byte                 `protobuf:"bytes,3,opt,name=proof_data,json=proofData,proto3" json:"proof_data,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *Proof) Reset() {
+	*x = Proof{}
+	mi := &file_protocol_messages_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Proof) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Proof) ProtoMessage() {}
+
+func (x *Proof) ProtoReflect() protoreflect.Message {
+	mi := &file_protocol_messages_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Proof.ProtoReflect.Descriptor instead.
+func (*Proof) Descriptor() ([]byte, []int) {
+	return file_protocol_messages_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Proof) GetPeriodId() uint64 {
+	if x != nil {
+		return x.PeriodId
+	}
+	return 0
+}
+
+func (x *Proof) GetSuperblockNumber() uint64 {
+	if x != nil {
+		return x.SuperblockNumber
+	}
+	return 0
+}
+
+func (x *Proof) GetProofData() []byte {
+	if x != nil {
+		return x.ProofData
+	}
+	return nil
+}
+
 // SP sends to the WS after collecting votes
 type NativeDecided struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -754,7 +815,7 @@ type NativeDecided struct {
 
 func (x *NativeDecided) Reset() {
 	*x = NativeDecided{}
-	mi := &file_protocol_messages_proto_msgTypes[12]
+	mi := &file_protocol_messages_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -766,7 +827,7 @@ func (x *NativeDecided) String() string {
 func (*NativeDecided) ProtoMessage() {}
 
 func (x *NativeDecided) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_messages_proto_msgTypes[12]
+	mi := &file_protocol_messages_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -779,7 +840,7 @@ func (x *NativeDecided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeDecided.ProtoReflect.Descriptor instead.
 func (*NativeDecided) Descriptor() ([]byte, []int) {
-	return file_protocol_messages_proto_rawDescGZIP(), []int{12}
+	return file_protocol_messages_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *NativeDecided) GetInstanceId() []byte {
@@ -807,7 +868,7 @@ type WSDecided struct {
 
 func (x *WSDecided) Reset() {
 	*x = WSDecided{}
-	mi := &file_protocol_messages_proto_msgTypes[13]
+	mi := &file_protocol_messages_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +880,7 @@ func (x *WSDecided) String() string {
 func (*WSDecided) ProtoMessage() {}
 
 func (x *WSDecided) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_messages_proto_msgTypes[13]
+	mi := &file_protocol_messages_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +893,7 @@ func (x *WSDecided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WSDecided.ProtoReflect.Descriptor instead.
 func (*WSDecided) Descriptor() ([]byte, []int) {
-	return file_protocol_messages_proto_rawDescGZIP(), []int{13}
+	return file_protocol_messages_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WSDecided) GetInstanceId() []byte {
@@ -877,7 +938,7 @@ type Message struct {
 
 func (x *Message) Reset() {
 	*x = Message{}
-	mi := &file_protocol_messages_proto_msgTypes[14]
+	mi := &file_protocol_messages_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +950,7 @@ func (x *Message) String() string {
 func (*Message) ProtoMessage() {}
 
 func (x *Message) ProtoReflect() protoreflect.Message {
-	mi := &file_protocol_messages_proto_msgTypes[14]
+	mi := &file_protocol_messages_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +963,7 @@ func (x *Message) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Message.ProtoReflect.Descriptor instead.
 func (*Message) Descriptor() ([]byte, []int) {
-	return file_protocol_messages_proto_rawDescGZIP(), []int{14}
+	return file_protocol_messages_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Message) GetSenderId() string {
@@ -1165,15 +1226,15 @@ const file_protocol_messages_proto_rawDesc = "" +
 	"\vinstance_id\x18\x01 \x01(\fR\n" +
 	"instanceId\x12\x1a\n" +
 	"\bdecision\x18\x02 \x01(\bR\bdecision\"\xfe\x01\n" +
-	"\x0eMailboxMessage\x12\x1f\n" +
-	"\vinstance_id\x18\x01 \x01(\fR\n" +
-	"instanceId\x12!\n" +
-	"\fsource_chain\x18\x02 \x01(\x04R\vsourceChain\x12+\n" +
-	"\x11destination_chain\x18\x03 \x01(\x04R\x10destinationChain\x12\x16\n" +
-	"\x06source\x18\x04 \x01(\fR\x06source\x12\x1a\n" +
-	"\breceiver\x18\x05 \x01(\fR\breceiver\x12\x1d\n" +
+	"\x0eMailboxMessage\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x06 \x01(\x04R\tsessionId\x12\x14\n" +
+	"session_id\x18\x01 \x01(\x04R\tsessionId\x12\x1f\n" +
+	"\vinstance_id\x18\x02 \x01(\fR\n" +
+	"instanceId\x12!\n" +
+	"\fsource_chain\x18\x03 \x01(\x04R\vsourceChain\x12+\n" +
+	"\x11destination_chain\x18\x04 \x01(\x04R\x10destinationChain\x12\x16\n" +
+	"\x06source\x18\x05 \x01(\fR\x06source\x12\x1a\n" +
+	"\breceiver\x18\x06 \x01(\fR\breceiver\x12\x14\n" +
 	"\x05label\x18\a \x01(\tR\x05label\x12\x12\n" +
 	"\x04data\x18\b \x03(\fR\x04data\"W\n" +
 	"\vStartPeriod\x12\x1b\n" +
@@ -1182,7 +1243,12 @@ const file_protocol_messages_proto_rawDesc = "" +
 	"\bRollback\x12\x1b\n" +
 	"\tperiod_id\x18\x01 \x01(\x04R\bperiodId\x12G\n" +
 	" last_finalized_superblock_number\x18\x02 \x01(\x04R\x1dlastFinalizedSuperblockNumber\x12C\n" +
-	"\x1elast_finalized_superblock_hash\x18\x03 \x01(\fR\x1blastFinalizedSuperblockHash\"L\n" +
+	"\x1elast_finalized_superblock_hash\x18\x03 \x01(\fR\x1blastFinalizedSuperblockHash\"p\n" +
+	"\x05Proof\x12\x1b\n" +
+	"\tperiod_id\x18\x01 \x01(\x04R\bperiodId\x12+\n" +
+	"\x11superblock_number\x18\x02 \x01(\x04R\x10superblockNumber\x12\x1d\n" +
+	"\n" +
+	"proof_data\x18\x03 \x01(\fR\tproofData\"L\n" +
 	"\rNativeDecided\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\fR\n" +
 	"instanceId\x12\x1a\n" +
@@ -1223,7 +1289,7 @@ func file_protocol_messages_proto_rawDescGZIP() []byte {
 	return file_protocol_messages_proto_rawDescData
 }
 
-var file_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_protocol_messages_proto_goTypes = []any{
 	(*HandshakeRequest)(nil),   // 0: compose.HandshakeRequest
 	(*HandshakeResponse)(nil),  // 1: compose.HandshakeResponse
@@ -1237,9 +1303,10 @@ var file_protocol_messages_proto_goTypes = []any{
 	(*MailboxMessage)(nil),     // 9: compose.MailboxMessage
 	(*StartPeriod)(nil),        // 10: compose.StartPeriod
 	(*Rollback)(nil),           // 11: compose.Rollback
-	(*NativeDecided)(nil),      // 12: compose.NativeDecided
-	(*WSDecided)(nil),          // 13: compose.WSDecided
-	(*Message)(nil),            // 14: compose.Message
+	(*Proof)(nil),              // 12: compose.Proof
+	(*NativeDecided)(nil),      // 13: compose.NativeDecided
+	(*WSDecided)(nil),          // 14: compose.WSDecided
+	(*Message)(nil),            // 15: compose.Message
 }
 var file_protocol_messages_proto_depIdxs = []int32{
 	4,  // 0: compose.XTRequest.transaction_requests:type_name -> compose.TransactionRequest
@@ -1255,8 +1322,8 @@ var file_protocol_messages_proto_depIdxs = []int32{
 	9,  // 10: compose.Message.mailbox_message:type_name -> compose.MailboxMessage
 	10, // 11: compose.Message.start_period:type_name -> compose.StartPeriod
 	11, // 12: compose.Message.rollback:type_name -> compose.Rollback
-	12, // 13: compose.Message.native_decided:type_name -> compose.NativeDecided
-	13, // 14: compose.Message.ws_decided:type_name -> compose.WSDecided
+	13, // 13: compose.Message.native_decided:type_name -> compose.NativeDecided
+	14, // 14: compose.Message.ws_decided:type_name -> compose.WSDecided
 	15, // [15:15] is the sub-list for method output_type
 	15, // [15:15] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
@@ -1269,7 +1336,7 @@ func file_protocol_messages_proto_init() {
 	if File_protocol_messages_proto != nil {
 		return
 	}
-	file_protocol_messages_proto_msgTypes[14].OneofWrappers = []any{
+	file_protocol_messages_proto_msgTypes[15].OneofWrappers = []any{
 		(*Message_HandshakeRequest)(nil),
 		(*Message_HandshakeResponse)(nil),
 		(*Message_Ping)(nil),
@@ -1290,7 +1357,7 @@ func file_protocol_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_protocol_messages_proto_rawDesc), len(file_protocol_messages_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

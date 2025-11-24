@@ -27,7 +27,7 @@ type Publisher interface {
 	// AdvanceSettledState is called when L1 emits a new settled state event
 	AdvanceSettledState(
 		superblockNumber compose.SuperblockNumber,
-		superblockHash compose.SuperBlockHash,
+		superblockHash compose.SuperblockHash,
 	) error
 	// ProofTimeout: Once a period starts, if the network ZK proof is not generated within 9 epochs,
 	// the publisher must roll back to the last finalized superblock and discard any active settlement pipeline.
@@ -38,7 +38,7 @@ type Publisher interface {
 
 type PublisherProver interface {
 	// RequestNetworkProof requests a proof for the given superblock number. It's called after all proofs from sequencers have been received.
-	RequestNetworkProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperBlockHash, proofs [][]byte) ([]byte, error)
+	RequestNetworkProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperblockHash, proofs [][]byte) ([]byte, error)
 }
 
 type PublisherMessenger interface {
@@ -46,7 +46,7 @@ type PublisherMessenger interface {
 	BroadcastRollback(
 		periodID compose.PeriodID,
 		superblockNumber compose.SuperblockNumber,
-		superblockHash compose.SuperBlockHash,
+		superblockHash compose.SuperblockHash,
 	)
 }
 
@@ -60,7 +60,7 @@ type PublisherState struct {
 
 	// Settlement state
 	LastFinalizedSuperblockNumber compose.SuperblockNumber
-	LastFinalizedSuperblockHash   compose.SuperBlockHash
+	LastFinalizedSuperblockHash   compose.SuperblockHash
 	Proofs                        map[compose.SuperblockNumber]map[compose.ChainID][]byte
 	Chains                        map[compose.ChainID]struct{}
 
@@ -94,7 +94,7 @@ func NewPublisher(
 	l1 L1,
 	periodID compose.PeriodID,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
-	lastFinalizedSuperblockHash compose.SuperBlockHash,
+	lastFinalizedSuperblockHash compose.SuperblockHash,
 	proofWindow uint64,
 	logger zerolog.Logger,
 	chains map[compose.ChainID]struct{},
@@ -256,7 +256,7 @@ func (p *publisher) ReceiveProof(periodID compose.PeriodID, superblockNumber com
 		return
 	}
 	p.mu.Lock()
-	p.Proofs[superblockNumber] = nil
+	delete(p.Proofs, superblockNumber)
 	p.mu.Unlock()
 	p.l1.PublishProof(superblockNumber, networkProof)
 }
@@ -335,7 +335,7 @@ func (p *publisher) DecideInstance(instance compose.Instance) error {
 // AdvanceSettledState is called when L1 emits a new settled state event
 func (p *publisher) AdvanceSettledState(
 	superblockNumber compose.SuperblockNumber,
-	superblockHash compose.SuperBlockHash,
+	superblockHash compose.SuperblockHash,
 ) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

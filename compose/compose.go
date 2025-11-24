@@ -16,7 +16,7 @@ const (
 
 type EthAddress [20]byte
 type TxHash [32]byte
-type SuperBlockHash [32]byte
+type SuperblockHash [32]byte
 type BlockHash [32]byte
 type StateRoot [32]byte
 type ChainID uint64

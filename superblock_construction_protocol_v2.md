@@ -75,7 +75,7 @@ though it's not covered here and should be treated in a later version.
 **Safety**
 - **Agreement**: All correct processes that finalize a superblock number $N$ agree on the same superblock object for $N$, read from L1.
 - **Monotonicity**: Finalized superblocks form a single chain, each referencing the previous via parent hash, with monotonically increasing superblock numbers.
-- **Composability** Consistency: For every ended period, every pair of chains agree on the same **ordered** set of successful composability instances that both participated. 
+- **Composability Consistency**: For every ended period, every pair of chains agree on the same **ordered** set of successful composability instances that both participated. 
 - **Sequentiality**: For any rollup, composability instances are executed one at a time (no overlap).
 
 **Liveness** (under partial synchrony and live SP)
@@ -85,13 +85,13 @@ though it's not covered here and should be treated in a later version.
 
 | Config            | Value                                   |
 |-------------------|-----------------------------------------|
-| `PERIOD_DURATION` | $10\times 32 \times 12 = 3840$ seconds. |
+| `PERIOD_DURATION` | $3840$ seconds. |
 | `GENESIS_TIME`    | Configurable by implementation.         |
 
 
 SBCP v2 groups composability instances into long time periods, aligned with the usual settlement cadence.
 
-The default period duration is 10 Ethereum epochs, i.e., 3840 seconds.
+The default period duration is 3840 seconds (which equals 10 Ethereum epochs for the traditional 12-second slots).
 
 Periods are counted from a **genesis** time.
 Thus, the period $k$ starts at:
@@ -209,9 +209,10 @@ the period ID and the sequence number.
 
 Such as local transactions are processed sequentially by the EVM,
 cross-chain transactions also should be isolated from other transactions.
-During an instance,
-neither local transactions can be processed (as described next in the
-sequencer section) nor other composability instances can be started.
+Thus, during an instance,
+sequencers should continue to ensure isolation with other local transactions
+(as described next in the sequencer section)
+as well as with other composability instances.
 Thus, the SP must ensure that no two instances overlap in terms of participating chains.
 For that, it holds the set of active chains (i.e., those currently participating in an instance)
 and updates it according to instance starts and terminations.
@@ -239,13 +240,13 @@ along with a timer with `ProofWindow` duration.
 
 According to the settlement protocol, each rollup will produce a proof and
 send it to the SP via the `Proof` message.
-Once the SP collects all proofs, it produces the network proof and
+Once the SP collects all proofs, it produces the superblock proof and
 publishes it to L1. Once the associated L1 event is received,
 the SP updates its settled state.
 
 ![proof](images/sbcp/proof.png)
 
-In case the timer expires, and it hasn't yet produced the network proof,
+In case the timer expires, and it hasn't yet produced the superblock proof,
 or in case the settlement pipeline fails (e.g., due to invalid proofs),
 the SP will broadcast a `Rollback` message
 with the current period ID and

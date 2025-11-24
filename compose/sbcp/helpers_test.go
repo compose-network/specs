@@ -35,21 +35,21 @@ func makeXTRequest(entries ...chainRequest) compose.XTRequest {
 // fakePublisherMessenger records broadcasts for assertions.
 type fakePublisherMessenger struct {
 	startPeriods []struct {
-		P compose.PeriodID
-		T compose.SuperblockNumber
+		PeriodID         compose.PeriodID
+		SuperblockNumber compose.SuperblockNumber
 	}
 	startInstances []compose.Instance
 	rollbacks      []struct {
-		P compose.PeriodID
-		S compose.SuperblockNumber
-		H compose.SuperBlockHash
+		PeriodID         compose.PeriodID
+		SuperblockNumber compose.SuperblockNumber
+		SuperblockHash   compose.SuperblockHash
 	}
 }
 
 func (m *fakePublisherMessenger) BroadcastStartPeriod(p compose.PeriodID, t compose.SuperblockNumber) {
 	m.startPeriods = append(m.startPeriods, struct {
-		P compose.PeriodID
-		T compose.SuperblockNumber
+		PeriodID         compose.PeriodID
+		SuperblockNumber compose.SuperblockNumber
 	}{p, t})
 }
 
@@ -57,32 +57,32 @@ func (m *fakePublisherMessenger) BroadcastStartInstance(inst compose.Instance) {
 	m.startInstances = append(m.startInstances, inst)
 }
 
-func (m *fakePublisherMessenger) BroadcastRollback(p compose.PeriodID, s compose.SuperblockNumber, h compose.SuperBlockHash) {
+func (m *fakePublisherMessenger) BroadcastRollback(p compose.PeriodID, s compose.SuperblockNumber, h compose.SuperblockHash) {
 	m.rollbacks = append(m.rollbacks, struct {
-		P compose.PeriodID
-		S compose.SuperblockNumber
-		H compose.SuperBlockHash
+		PeriodID         compose.PeriodID
+		SuperblockNumber compose.SuperblockNumber
+		SuperblockHash   compose.SuperblockHash
 	}{p, s, h})
 }
 
 type fakePublisherProver struct {
 	calls []struct {
 		superblock compose.SuperblockNumber
-		hash       compose.SuperBlockHash
+		hash       compose.SuperblockHash
 		proofs     [][]byte
 	}
 	nextProof []byte
 	err       error
 }
 
-func (p *fakePublisherProver) RequestNetworkProof(superblockNumber compose.SuperblockNumber, hash compose.SuperBlockHash, proofs [][]byte) ([]byte, error) {
+func (p *fakePublisherProver) RequestNetworkProof(superblockNumber compose.SuperblockNumber, hash compose.SuperblockHash, proofs [][]byte) ([]byte, error) {
 	copied := make([][]byte, len(proofs))
 	for i, proof := range proofs {
 		copied[i] = append([]byte(nil), proof...)
 	}
 	p.calls = append(p.calls, struct {
 		superblock compose.SuperblockNumber
-		hash       compose.SuperBlockHash
+		hash       compose.SuperblockHash
 		proofs     [][]byte
 	}{superblockNumber, hash, copied})
 	if p.err != nil {
@@ -153,7 +153,7 @@ func mkSettled(sb compose.SuperblockNumber, head BlockNumber) SettledState {
 	return SettledState{
 		BlockHeader:      mkHeader(head),
 		SuperblockNumber: sb,
-		SuperblockHash:   compose.SuperBlockHash{1, 2, 3},
+		SuperblockHash:   compose.SuperblockHash{1, 2, 3},
 	}
 }
 

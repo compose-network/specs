@@ -20,11 +20,11 @@ func (a MailboxMessage) Equal(b MailboxMessage) bool {
 }
 
 type MailboxMessageHeader struct {
+	SessionID     compose.SessionID
 	SourceChainID compose.ChainID
 	DestChainID   compose.ChainID
 	Sender        compose.EthAddress
 	Receiver      compose.EthAddress
-	SessionID     compose.SessionID
 	Label         string
 }
 

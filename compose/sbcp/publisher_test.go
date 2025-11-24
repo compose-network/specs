@@ -13,7 +13,7 @@ import (
 func newPublisherForTest(
 	period compose.PeriodID,
 	finalized compose.SuperblockNumber,
-	hash compose.SuperBlockHash,
+	hash compose.SuperblockHash,
 	window uint64,
 	chains map[compose.ChainID]struct{},
 ) (Publisher, *fakePublisherMessenger, *fakePublisherProver, *fakeL1) {
@@ -29,20 +29,20 @@ func TestPublisher_StartPeriod_basic_broadcast_and_reset(t *testing.T) {
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(9),
 		compose.SuperblockNumber(7),
-		compose.SuperBlockHash{9},
+		compose.SuperblockHash{9},
 		0,
 		makeDefaultChainSet(),
 	)
 
-	// Start new period P=10 → target becomes F+1 = 8
+	// Start new period PeriodID=10 → target becomes F+1 = 8
 	require.NoError(t, pub.StartPeriod())
 
 	require.Len(t, m.startPeriods, 1)
 	sp := m.startPeriods[0]
-	assert.Equal(t, compose.PeriodID(10), sp.P)
+	assert.Equal(t, compose.PeriodID(10), sp.PeriodID)
 	// Current implementation tags new period with next number after the just-sealed one,
 	// which for finalized=7 leads to target=8.
-	assert.Equal(t, compose.SuperblockNumber(8), sp.T)
+	assert.Equal(t, compose.SuperblockNumber(8), sp.SuperblockNumber)
 }
 
 func TestPublisher_StartPeriod_error_when_target_exceeds_proof_window(t *testing.T) {
@@ -50,7 +50,7 @@ func TestPublisher_StartPeriod_error_when_target_exceeds_proof_window(t *testing
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(7),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		1,
 		makeDefaultChainSet(),
 	)
@@ -69,7 +69,7 @@ func TestPublisher_StartPeriod_no_window_constraint_when_disabled(t *testing.T) 
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(7),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -85,7 +85,7 @@ func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(5),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -113,7 +113,7 @@ func TestPublisher_StartInstance_conflicting_set_rejected(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(5),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -141,7 +141,7 @@ func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(2),
 		compose.SuperblockNumber(2),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -161,7 +161,7 @@ func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(10),
 		compose.SuperblockNumber(9),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -196,7 +196,7 @@ func TestPublisher_StartInstance_populates_instance_fields(t *testing.T) {
 	pub, messenger, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
 		compose.SuperblockNumber(1),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -217,7 +217,7 @@ func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
 		compose.SuperblockNumber(1),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -251,15 +251,15 @@ func TestPublisher_AdvanceSettledState_monotonic(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
 		compose.SuperblockNumber(1),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
 	// Advance forward
-	err := pub.AdvanceSettledState(2, compose.SuperBlockHash{9})
+	err := pub.AdvanceSettledState(2, compose.SuperblockHash{9})
 	require.NoError(t, err)
 	// Future calls with lower or equal values should return ErrOldSettledState
-	err = pub.AdvanceSettledState(2, compose.SuperBlockHash{8})
+	err = pub.AdvanceSettledState(2, compose.SuperblockHash{8})
 	require.ErrorIs(t, err, ErrOldSettledState)
 }
 
@@ -268,7 +268,7 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(3),
 		finalized,
-		compose.SuperBlockHash{7},
+		compose.SuperblockHash{7},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -286,16 +286,16 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 	// Expect a rollback broadcast to last finalized and target reset to F+1
 	require.Len(t, m.rollbacks, 1)
 	rb := m.rollbacks[0]
-	assert.Equal(t, compose.PeriodID(3), rb.P)
-	assert.Equal(t, finalized, rb.S)
-	assert.Equal(t, compose.SuperBlockHash{7}, rb.H)
+	assert.Equal(t, compose.PeriodID(3), rb.PeriodID)
+	assert.Equal(t, finalized, rb.SuperblockNumber)
+	assert.Equal(t, compose.SuperblockHash{7}, rb.SuperblockHash)
 }
 
 func TestPublisher_StartInstance_invalid_requests(t *testing.T) {
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
 		compose.SuperblockNumber(1),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
 	)
@@ -317,7 +317,7 @@ func TestPublisher_ReceiveProof_aggregates_and_publishes(t *testing.T) {
 	pub, _, prover, l1 := newPublisherForTest(
 		compose.PeriodID(10),
 		compose.SuperblockNumber(5),
-		compose.SuperBlockHash{1},
+		compose.SuperblockHash{1},
 		0,
 		chains,
 	)
@@ -336,7 +336,7 @@ func TestPublisher_ReceiveProof_aggregates_and_publishes(t *testing.T) {
 	// Check prover was called
 	call := prover.calls[0]
 	assert.Equal(t, compose.SuperblockNumber(6), call.superblock)
-	assert.Equal(t, compose.SuperBlockHash{1}, call.hash)
+	assert.Equal(t, compose.SuperblockHash{1}, call.hash)
 	assert.Len(t, call.proofs, 2)
 	assert.ElementsMatch(t, [][]byte{[]byte("proof-1"), []byte("proof-2")}, call.proofs)
 
@@ -355,7 +355,7 @@ func TestPublisher_ReceiveProof_proverErrorTriggersRollback(t *testing.T) {
 	pub, messenger, prover, l1 := newPublisherForTest(
 		compose.PeriodID(10),
 		compose.SuperblockNumber(5),
-		compose.SuperBlockHash{9},
+		compose.SuperblockHash{9},
 		0,
 		chains,
 	)
@@ -373,8 +373,8 @@ func TestPublisher_ReceiveProof_proverErrorTriggersRollback(t *testing.T) {
 
 	// Correct rollback msg
 	rb := messenger.rollbacks[0]
-	assert.Equal(t, compose.SuperblockNumber(5), rb.S)
-	assert.Equal(t, compose.SuperBlockHash{9}, rb.H)
+	assert.Equal(t, compose.SuperblockNumber(5), rb.SuperblockNumber)
+	assert.Equal(t, compose.SuperblockHash{9}, rb.SuperblockHash)
 }
 
 func TestPublisher_ReceiveProof_ignores_non_terminated_superblock(t *testing.T) {
@@ -382,7 +382,7 @@ func TestPublisher_ReceiveProof_ignores_non_terminated_superblock(t *testing.T) 
 	pub, _, prover, l1 := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(4),
-		compose.SuperBlockHash{3},
+		compose.SuperblockHash{3},
 		0,
 		chains,
 	)

@@ -71,12 +71,12 @@ message Decided {
 
 // Direct Mailbox message exchange between sequencers (without SP involvement)
 message MailboxMessage {
-  bytes instance_id = 1; // Instance ID
-  uint64 source_chain = 2;
-  uint64 destination_chain = 3;
-  bytes source = 4;
-  bytes receiver = 5;
-  uint64 session_id = 6;
+  uint64 session_id = 1;
+  bytes instance_id = 2;
+  uint64 source_chain = 3;
+  uint64 destination_chain = 4;
+  bytes source = 5;
+  bytes receiver = 6;
   string label = 7;
   repeated bytes data = 8; // ABI encoded data
 }

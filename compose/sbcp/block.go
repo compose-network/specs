@@ -26,5 +26,5 @@ type SealedBlockHeader struct {
 type SettledState struct {
 	BlockHeader      BlockHeader
 	SuperblockNumber compose.SuperblockNumber
-	SuperblockHash   compose.SuperBlockHash
+	SuperblockHash   compose.SuperblockHash
 }
