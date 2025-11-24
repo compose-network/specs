@@ -45,6 +45,7 @@ func TestWrappedSequencer_NewInstanceValidatesTransactions(t *testing.T) {
 		compose.StateRoot{},
 		testLogger(),
 	)
+	// Ensure an error is returned chain has no transaction.
 	require.ErrorIs(t, err, ErrNoTransactions)
 }
 
@@ -71,6 +72,7 @@ func TestWrappedSequencer_RunSuccessSendsMailboxWrites(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, ws.Run())
+	// Confirm 1 request call and sent a mailbox message.
 	require.Len(t, exec.requests, 1)
 	require.Len(t, net.mailboxMessages, 1)
 	assert.True(t, net.mailboxMessages[0].msg.Equal(msg))
@@ -99,6 +101,7 @@ func TestWrappedSequencer_RunSimulationErrorRejects(t *testing.T) {
 	require.NoError(t, err)
 
 	runErr := ws.Run()
+	// Check that the error is propagated and the decision is sent with false.
 	require.EqualError(t, runErr, "simulating sequencer failed: boom")
 	require.Len(t, net.decisions, 1)
 	assert.False(t, net.decisions[0])
@@ -132,6 +135,7 @@ func TestWrappedSequencer_ReadMissThenMailboxDelivery(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// First run should hit read miss.
 	require.NoError(t, ws.Run())
 	require.Len(t, exec.requests, 1)
 
@@ -139,8 +143,12 @@ func TestWrappedSequencer_ReadMissThenMailboxDelivery(t *testing.T) {
 		MailboxMessageHeader: header,
 		Data:                 []byte("payload"),
 	}
+	// Then, another engine request is made with no error.
 	require.NoError(t, ws.ProcessMailboxMessage(msg))
 	require.Len(t, exec.requests, 2)
+	assert.Equal(t, compose.DecisionStatePending, ws.DecisionState())
+	// State moves to waiting for native decision.
+	assert.Equal(t, WSStateWaitingNativeDecided, ws.(*wsInstance).state)
 }
 
 func TestWrappedSequencer_WriteMissResimulatesWithPrepopulation(t *testing.T) {
@@ -164,7 +172,9 @@ func TestWrappedSequencer_WriteMissResimulatesWithPrepopulation(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, ws.Run())
+	// There must be two requests. The second triggered after the write-miss.
 	require.Len(t, exec.requests, 2)
+	// PutOutboxMessages should be populated with the write-miss.
 	require.Len(t, exec.requests[1].PutOutboxMessages, 1)
 	assert.True(t, exec.requests[1].PutOutboxMessages[0].Equal(writeMiss))
 }
@@ -183,12 +193,15 @@ func TestWrappedSequencer_ProcessNativeDecidedTrueTriggersERFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, ws.Run())
+	// Receives native decided.
 	require.NoError(t, ws.ProcessNativeDecidedMessage(true))
 
+	// Calls ER with the two transactions.
 	require.Len(t, er.calls, 1)
 	call := er.calls[0]
 	require.Len(t, call.Transactions, 2)
 	assert.Equal(t, [][]byte{[]byte("tx1"), []byte("tx2")}, call.Transactions)
+	// Send decision to network.
 	require.Len(t, net.decisions, 1)
 	assert.True(t, net.decisions[0])
 	assert.Equal(t, compose.DecisionStateAccepted, ws.DecisionState())
@@ -211,8 +224,8 @@ func TestWrappedSequencer_ProcessNativeDecidedFalseCancels(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, ws.Run())
+	// Receives native decided false, rejecting the instance.
 	require.NoError(t, ws.ProcessNativeDecidedMessage(false))
-
 	assert.Equal(t, compose.DecisionStateRejected, ws.DecisionState())
 	assert.Len(t, er.calls, 0)
 	assert.Len(t, net.decisions, 0)
@@ -233,8 +246,9 @@ func TestWrappedSequencer_DuplicateNativeDecidedErrors(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Native decided arrives before simulation completes.
+	// 1st native decided before simulation even finishes raises no errors.
 	require.NoError(t, ws.ProcessNativeDecidedMessage(true))
+	// Duplicate native decided should error.
 	err = ws.ProcessNativeDecidedMessage(false)
 	require.ErrorIs(t, err, ErrDuplicateWSDecided)
 }
@@ -259,6 +273,7 @@ func TestWrappedSequencer_ERFailureSendsFalseDecision(t *testing.T) {
 	require.NoError(t, ws.ProcessNativeDecidedMessage(true))
 
 	require.Len(t, er.calls, 1)
+	// Send decision (false) to network.
 	require.Len(t, net.decisions, 1)
 	assert.False(t, net.decisions[0])
 	assert.Equal(t, compose.DecisionStateRejected, ws.DecisionState())
@@ -283,6 +298,7 @@ func TestWrappedSequencer_ProcessMailboxMessageIgnoredWhenNotSimulating(t *testi
 	require.Equal(t, 1, len(exec.requests))
 
 	msg := makeMailboxMsg(1, 4, "late", []byte("payload"))
+	// ProcessMailboxMessage don't trigger any simulation requests.
 	require.NoError(t, ws.ProcessMailboxMessage(msg))
 	assert.Equal(t, 1, len(exec.requests))
 }
@@ -304,6 +320,7 @@ func TestWrappedSequencer_TimeoutBehaviour(t *testing.T) {
 
 	require.NoError(t, ws.Run())
 	ws.Timeout()
+	// Timeout (before ER call is made) should reject the instance.
 	require.Len(t, net.decisions, 1)
 	assert.False(t, net.decisions[0])
 	assert.Equal(t, compose.DecisionStateRejected, ws.DecisionState())
