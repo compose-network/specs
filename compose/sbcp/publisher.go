@@ -256,7 +256,7 @@ func (p *publisher) ReceiveProof(periodID compose.PeriodID, superblockNumber com
 		return
 	}
 	p.mu.Lock()
-	p.Proofs[superblockNumber] = nil
+	delete(p.Proofs, superblockNumber)
 	p.mu.Unlock()
 	p.l1.PublishProof(superblockNumber, networkProof)
 }
