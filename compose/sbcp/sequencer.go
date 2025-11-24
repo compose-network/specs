@@ -28,7 +28,7 @@ type Sequencer interface {
 	StartPeriod(periodID compose.PeriodID, targetSuperblockNumber compose.SuperblockNumber) error
 	Rollback(
 		superblockNumber compose.SuperblockNumber,
-		superblockHash compose.SuperBlockHash,
+		superblockHash compose.SuperblockHash,
 		currentPeriodID compose.PeriodID,
 	) (BlockHeader, error)
 
@@ -137,7 +137,7 @@ func (s *sequencer) StartPeriod(
 
 	s.mu.Unlock()
 
-	// If there is an active block (with periodID P-1), the settlement pipeline for P-1 must wait until it's sealed.
+	// If there is an active block (with periodID PeriodID-1), the settlement pipeline for PeriodID-1 must wait until it's sealed.
 	// Else, it can be triggered right away.
 	if s.PendingBlock == nil {
 		s.logger.Info().Msg("No pending block, triggering settlement pipeline")
@@ -301,7 +301,7 @@ func (s *sequencer) AdvanceSettledState(settledBlock SettledState) {
 // The sequencer must erase blocks beyond the given superblock number and hash, and return the safe head block header.
 func (s *sequencer) Rollback(
 	superblockNumber compose.SuperblockNumber,
-	superblockHash compose.SuperBlockHash,
+	superblockHash compose.SuperblockHash,
 	currentPeriodID compose.PeriodID,
 ) (BlockHeader, error) {
 	s.mu.Lock()
