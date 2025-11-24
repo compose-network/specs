@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	ErrNoTransactions       = errors.New("no transactions to execute")
-	ErrNotInSimulatingState = errors.New("sequencer not in simulating state")
-	ErrDuplicateWSDecided   = errors.New("duplicate WS decided")
+	ErrNoTransactions         = errors.New("no transactions to execute")
+	ErrNotInSimulatingState   = errors.New("sequencer not in simulating state")
+	ErrDuplicateNativeDecided = errors.New("duplicate native decided")
 )
 
 // WrappedSequencerInstance is an interface that represents the wrapped-sequencer logic for a CDCP instance.
@@ -378,6 +378,15 @@ func (ws *wsInstance) ProcessMailboxMessage(msg scp.MailboxMessage) error {
 func (ws *wsInstance) ProcessNativeDecidedMessage(decided bool) error {
 	ws.mu.Lock()
 
+	if ws.nativeDecided != nil {
+		ws.logger.Info().
+			Bool("received_native_decided", decided).
+			Bool("stored_native_decision", *ws.nativeDecided).
+			Msg("Ignoring native decided because already received")
+		ws.mu.Unlock()
+		return ErrDuplicateNativeDecided
+	}
+
 	if ws.state == WSStateDone {
 		ws.logger.Info().
 			Bool("received_native_decided", decided).
@@ -386,15 +395,6 @@ func (ws *wsInstance) ProcessNativeDecidedMessage(decided bool) error {
 
 		ws.mu.Unlock()
 		return nil
-	}
-
-	if ws.nativeDecided != nil {
-		ws.logger.Info().
-			Bool("received_native_decided", decided).
-			Bool("stored_native_decision", *ws.nativeDecided).
-			Msg("Ignoring native decided because already received")
-		ws.mu.Unlock()
-		return ErrDuplicateWSDecided
 	}
 
 	ws.logger.Info().

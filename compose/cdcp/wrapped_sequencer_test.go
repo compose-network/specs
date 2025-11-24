@@ -151,6 +151,72 @@ func TestWrappedSequencer_ReadMissThenMailboxDelivery(t *testing.T) {
 	assert.Equal(t, WSStateWaitingNativeDecided, ws.(*wsInstance).state)
 }
 
+func TestWrappedSequencer_ReadMissWithNativeDecidedAndMailboxSequence(t *testing.T) {
+	header := scp.MailboxMessageHeader{
+		SourceChainID: compose.ChainID(4),
+		DestChainID:   compose.ChainID(8),
+		SessionID:     compose.SessionID(1),
+		Sender:        compose.EthAddress{3},
+		Receiver:      compose.EthAddress{4},
+		Label:         "need-mailbox",
+	}
+	exec := &fakeWSExecutionEngine{
+		chainID: compose.ChainID(8),
+		responses: []WSSimulationResponse{
+			{ReadMiss: &header},
+			{}, // success once mailbox fulfilled
+		},
+	}
+	net := &fakeWSNetwork{}
+	er := &fakeERClient{}
+	ws, err := NewWrappedSequencerInstance(
+		makeInstance(chainReq(8, []byte("tx1"))),
+		exec,
+		net,
+		er,
+		compose.StateRoot{},
+		testLogger(),
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, ws.Run())
+	// First run should hit read miss.
+	require.Len(t, exec.requests, 1)
+	assert.Len(t, er.calls, 0)
+
+	// Native decided true arrives while still simulating; no ER call yet.
+	require.NoError(t, ws.ProcessNativeDecidedMessage(true))
+	assert.Len(t, er.calls, 0)
+	assert.Len(t, net.decisions, 0)
+
+	// Wrong mailbox message should not trigger re-simulation.
+	wrong := header
+	wrong.Label = "other"
+	require.NoError(t, ws.ProcessMailboxMessage(scp.MailboxMessage{
+		MailboxMessageHeader: wrong,
+		Data:                 []byte("other"),
+	}))
+	assert.Len(t, exec.requests, 1)
+	assert.Len(t, er.calls, 0)
+
+	// Correct mailbox message satisfies the read and triggers ER call.
+	require.NoError(t, ws.ProcessMailboxMessage(scp.MailboxMessage{
+		MailboxMessageHeader: header,
+		Data:                 []byte("payload"),
+	}))
+	require.Len(t, exec.requests, 2)
+	require.Len(t, er.calls, 1)
+	require.Len(t, net.decisions, 1)
+	assert.True(t, net.decisions[0])
+	assert.Equal(t, compose.DecisionStateAccepted, ws.DecisionState())
+
+	// Timeout after ER response should be ignored.
+	ws.Timeout()
+	ws.Timeout()
+	require.Len(t, net.decisions, 1)
+	require.Len(t, er.calls, 1)
+}
+
 func TestWrappedSequencer_WriteMissResimulatesWithPrepopulation(t *testing.T) {
 	writeMiss := makeMailboxMsg(7, 9, "write", []byte("payload"))
 	exec := &fakeWSExecutionEngine{
@@ -250,7 +316,36 @@ func TestWrappedSequencer_DuplicateNativeDecidedErrors(t *testing.T) {
 	require.NoError(t, ws.ProcessNativeDecidedMessage(true))
 	// Duplicate native decided should error.
 	err = ws.ProcessNativeDecidedMessage(false)
-	require.ErrorIs(t, err, ErrDuplicateWSDecided)
+	require.ErrorIs(t, err, ErrDuplicateNativeDecided)
+}
+
+func TestWrappedSequencer_NativeDecidedAfterCompletionIgnored(t *testing.T) {
+	exec := &fakeWSExecutionEngine{
+		chainID: compose.ChainID(13),
+	}
+	net := &fakeWSNetwork{}
+	er := &fakeERClient{}
+	ws, err := NewWrappedSequencerInstance(
+		makeInstance(chainReq(13, []byte("tx1"))),
+		exec,
+		net,
+		er,
+		compose.StateRoot{},
+		testLogger(),
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, ws.Run())
+	require.NoError(t, ws.ProcessNativeDecidedMessage(true))
+	require.Len(t, er.calls, 1)
+	require.Len(t, net.decisions, 1)
+	assert.True(t, net.decisions[0])
+	assert.Equal(t, compose.DecisionStateAccepted, ws.DecisionState())
+
+	// Additional native decided messages raise error and are ignored.
+	require.Error(t, ws.ProcessNativeDecidedMessage(false), ErrDuplicateNativeDecided)
+	require.Len(t, er.calls, 1)
+	require.Len(t, net.decisions, 1)
 }
 
 func TestWrappedSequencer_ERFailureSendsFalseDecision(t *testing.T) {
@@ -328,4 +423,48 @@ func TestWrappedSequencer_TimeoutBehaviour(t *testing.T) {
 	// Timeout again should be ignored now that instance is done.
 	ws.Timeout()
 	assert.Len(t, net.decisions, 1)
+}
+
+func TestWrappedSequencer_TimeoutDuringReadMissIgnoresLaterMailbox(t *testing.T) {
+	header := scp.MailboxMessageHeader{
+		SourceChainID: compose.ChainID(20),
+		DestChainID:   compose.ChainID(30),
+		SessionID:     compose.SessionID(1),
+		Sender:        compose.EthAddress{9},
+		Receiver:      compose.EthAddress{8},
+		Label:         "need-msg",
+	}
+	exec := &fakeWSExecutionEngine{
+		chainID: compose.ChainID(30),
+		responses: []WSSimulationResponse{
+			{ReadMiss: &header},
+		},
+	}
+	net := &fakeWSNetwork{}
+	ws, err := NewWrappedSequencerInstance(
+		makeInstance(chainReq(30, []byte("tx1"))),
+		exec,
+		net,
+		&fakeERClient{},
+		compose.StateRoot{},
+		testLogger(),
+	)
+	require.NoError(t, err)
+
+	// First run should hit read miss.
+	require.NoError(t, ws.Run())
+	require.Len(t, exec.requests, 1)
+
+	// Timeout before any native decision rejects immediately.
+	ws.Timeout()
+	require.Len(t, net.decisions, 1)
+	assert.False(t, net.decisions[0])
+	assert.Equal(t, compose.DecisionStateRejected, ws.DecisionState())
+
+	// Mailbox messages after timeout are ignored and do not resimulate.
+	require.NoError(t, ws.ProcessMailboxMessage(scp.MailboxMessage{
+		MailboxMessageHeader: header,
+		Data:                 []byte("payload"),
+	}))
+	require.Len(t, exec.requests, 1) // no new request
 }
