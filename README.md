@@ -14,6 +14,9 @@ on the inclusion of a cross-chain transaction.
 - a synchronous settlement pipeline, which finalizes all chains
 simultaneously in L1 with a single ZK proof.
 
+Furthermore, it also provides an extra feature for native rollups to
+compose with a single external rollup. This is achieved by extending the coordination
+protocol to depend on the transaction execution of the external rollup.
 
 ## 📖 Reading Guide
 
@@ -28,6 +31,9 @@ block construction, and defines the triggering and input for the settlement pipe
 explains the settlement pipeline of Compose,
 picturing the recursive ZK programs architecture which
 outputs a single ZK proof about the state progress of the entire chain.
+4. [Cross-Domain Composability Protocol (CDCP)](./cross_domain_composability_protocol.md):
+an extension to SCP that enables atomic execution
+between Compose native rollups and an external rollup.
 
 ## 📝 Minimal Spec Lib Implementation
 
