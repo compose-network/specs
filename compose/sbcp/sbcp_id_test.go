@@ -43,7 +43,7 @@ func TestGenerateInstanceID_stability_and_sensitivity(t *testing.T) {
 	idE := GenerateInstanceID(10, 1, reqReordered)
 	assert.NotEqual(t, idA, idE)
 
-	// Empty tx bytes ignored vs omitted
+	// Empty tx bytes is not ignored
 	reqWithEmpty := makeXTRequest(
 		chainReq(1, []byte{0x01, 0x02}),
 		chainReq(2, []byte{}),
@@ -53,5 +53,5 @@ func TestGenerateInstanceID_stability_and_sensitivity(t *testing.T) {
 	)
 	idF := GenerateInstanceID(10, 3, reqWithEmpty)
 	idG := GenerateInstanceID(10, 3, reqOmit)
-	assert.Equal(t, idF, idG, "empty tx bytes are ignored in ID")
+	assert.NotEqual(t, idF, idG, "empty tx bytes are not ignored in ID")
 }

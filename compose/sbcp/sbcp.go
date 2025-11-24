@@ -25,10 +25,24 @@ func GenerateInstanceID(
 	binary.BigEndian.PutUint64(b[:], uint64(seq))
 	buf.Write(b[:])
 
-	// Append each transaction's raw bytes
+	// Append each transaction's chain ID, length and raw bytes
 	for _, req := range xtRequest.Transactions {
+
+		// Chain identifier
+		binary.BigEndian.PutUint64(b[:], uint64(req.ChainID))
+		buf.Write(b[:])
+
+		// Number of transactions for the chain
+		binary.BigEndian.PutUint64(b[:], uint64(len(req.Transactions)))
+		buf.Write(b[:])
+
 		for _, data := range req.Transactions {
 			if len(data) > 0 {
+				// Transaction length
+				binary.BigEndian.PutUint64(b[:], uint64(len(data)))
+				buf.Write(b[:])
+
+				// Transaction bytes
 				buf.Write(data)
 			}
 		}
