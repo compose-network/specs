@@ -134,12 +134,13 @@ func (s *sequencer) StartPeriod(
 	s.PeriodID = periodID
 	s.TargetSuperblockNumber = targetSuperblockNumber
 	s.LastSequenceNumber = nil
+	noPendingBlock := s.PendingBlock == nil
 
 	s.mu.Unlock()
 
 	// If there is an active block (with periodID PeriodID-1), the settlement pipeline for PeriodID-1 must wait until it's sealed.
 	// Else, it can be triggered right away.
-	if s.PendingBlock == nil {
+	if noPendingBlock {
 		s.logger.Info().Msg("No pending block, triggering settlement pipeline")
 		s.startSettlement(periodID-1, targetSuperblockNumber-1)
 	} else {
