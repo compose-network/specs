@@ -31,10 +31,7 @@ outputs a single ZK proof about the state progress of the entire chain.
 
 ## 📝 Minimal Spec Lib Implementation
 
-This repo contains a minimal implementation of the core logic of the proposed protocols:
-- [Messages Proto File](./compose/proto/protocol_messages.proto)
-- [SCP Module](./compose/scp/README.md)
-- [SBCP Module](./compose/sbcp/README.md)
+This repo contains a [minimal implementation](./compose/README.md) of the core logic of the proposed protocols.
 
 ## ⚙️ Rollup Integration
 
