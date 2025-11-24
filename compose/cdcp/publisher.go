@@ -157,7 +157,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 	}
 
 	// Ensure it's a native chain
-	if !r.nativeChainInInstance(sender) {
+	if _, ok := r.nativeChains[sender]; !ok {
 		r.logger.Info().
 			Uint64("chain_id", uint64(sender)).
 			Bool("vote", vote).
@@ -267,9 +267,4 @@ func (r *publisherInstance) Timeout() error {
 	r.network.SendDecided(r.instance.ID, false)
 	r.network.SendNativeDecided(r.instance.ID, false)
 	return nil
-}
-
-func (r *publisherInstance) nativeChainInInstance(chainID compose.ChainID) bool {
-	_, ok := r.nativeChains[chainID]
-	return ok
 }
