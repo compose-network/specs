@@ -21,13 +21,20 @@ To read about the protocol in detail, please check:
 1. [Synchronous Composability Protocol (SCP)](./synchronous_composability_protocol.md):
 the fundamental building block that provides coordination
 on a single cross-chain transaction inclusion.
-2. [Superblock Construction Protocol (SBCP)](./superblock_construction_protocol.md):
+2. [Superblock Construction Protocol (SBCP) v2](./superblock_construction_protocol_v2.md):
 the orchestration layer that manages multiple SCP instances,
 block construction, and defines the triggering and input for the settlement pipeline.
 3. [Settlement Layer](./settlement_layer.md):
 explains the settlement pipeline of Compose,
 picturing the recursive ZK programs architecture which
 outputs a single ZK proof about the state progress of the entire chain.
+
+## 📝 Minimal Spec Lib Implementation
+
+This repo contains a minimal implementation of the core logic of the proposed protocols:
+- [Messages Proto File](./compose/proto/protocol_messages.proto)
+- [SCP Module](./compose/scp/README.md)
+- [SBCP Module](./compose/sbcp/README.md)
 
 ## ⚙️ Rollup Integration
 
