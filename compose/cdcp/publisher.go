@@ -196,7 +196,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.state != PublisherStateDone {
+	if r.state == PublisherStateDone {
 		r.logger.Info().
 			Uint64("chain_id", uint64(sender)).
 			Bool("ws_decided", decision).
