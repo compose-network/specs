@@ -220,6 +220,7 @@ func (ws *wsInstance) Run() error {
 			Uint64("destination_chain_id", uint64(response.WriteMiss.DestChainID)).
 			Str("label", response.WriteMiss.Label).
 			Msg("Simulation hit write miss, adding message to prepopulation list.")
+		ws.mu.Unlock()
 		return ws.Run()
 	}
 
@@ -392,6 +393,7 @@ func (ws *wsInstance) ProcessNativeDecidedMessage(decided bool) error {
 			Bool("received_native_decided", decided).
 			Bool("stored_native_decision", *ws.nativeDecided).
 			Msg("Ignoring native decided because already received")
+		ws.mu.Unlock()
 		return ErrDuplicateWSDecided
 	}
 
