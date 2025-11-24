@@ -15,6 +15,8 @@ var (
 	ErrDuplicatedVote           = errors.New("duplicated vote")
 	ErrVoteSenderNotNativeChain = errors.New("vote sender is not a native chain")
 	ErrNotERChain               = errors.New("not ER chain")
+	ErrDuplicatedWSDecided      = errors.New("duplicated WSDecided")
+	ErrInvalidStateForWSDecided = errors.New("invalid protocol state: WSDecided true received while waiting for votes")
 )
 
 // PublisherInstance represents the publisher logic for the CDCP protocol
@@ -57,6 +59,7 @@ type publisherInstance struct {
 	state         PublisherState
 	decisionState compose.DecisionState
 	votes         map[compose.ChainID]bool
+	wsDecision    *bool
 
 	logger zerolog.Logger
 }
@@ -83,6 +86,7 @@ func NewPublisherInstance(
 		state:         PublisherStateWaitingVotes, // initial state
 		decisionState: compose.DecisionStatePending,
 		votes:         make(map[compose.ChainID]bool),
+		wsDecision:    nil,
 		logger:        logger,
 	}
 
@@ -196,6 +200,16 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if r.wsDecision != nil {
+		r.logger.Error().
+			Uint64("chain_id", uint64(sender)).
+			Bool("ws_decided", decision).
+			Bool("previous_ws_decided", *r.wsDecision).
+			Msg("Duplicated WSDecided")
+		return ErrDuplicatedWSDecided
+	}
+
 	if r.state == PublisherStateDone {
 		r.logger.Info().
 			Uint64("chain_id", uint64(sender)).
@@ -208,11 +222,11 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 	// as the protocol specifies that WSDecided(true) can only be sent
 	// after the WS receives the NativeDecided
 	if r.state == PublisherStateWaitingVotes && decision {
-		r.logger.Warn().
+		r.logger.Error().
 			Uint64("chain_id", uint64(sender)).
 			Bool("ws_decided", decision).
 			Msg("WSDecided true received, but still waiting for votes. Impossible protocol state.")
-		return nil
+		return ErrInvalidStateForWSDecided
 	}
 
 	// Ensure it's ER chain
@@ -223,6 +237,9 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 			Msg("WSDecided received from non ER chain")
 		return ErrNotERChain
 	}
+
+	// Valid message -> store decision
+	r.wsDecision = &decision
 
 	// If decision is true, decide true
 	if decision {
