@@ -29,15 +29,17 @@ Note that the SCP and settlement protocols are used as building blocks for SBCP.
 
 ## Table of Contents
 
-- [Comparison to V1](#comparison-to-v1)
-- [System Model](#system-model)
-- [Properties](#properties)
-- [Time And Periods](#time-and-periods)
-- [Protocol](#protocol)
-  - [Messages](#messages)
-  - [Shared Publisher](#shared-publisher-sp)
-  - [Sequencer](#sequencer)
-- [Informal Intuition](#informal-intuition)
+- [Superblock Construction Protocol v2 (SBCP v2)](#superblock-construction-protocol-v2-sbcp-v2)
+  - [Table of Contents](#table-of-contents)
+  - [Comparison to V1](#comparison-to-v1)
+  - [System Model](#system-model)
+  - [Properties](#properties)
+  - [Time And Periods](#time-and-periods)
+  - [Protocol](#protocol)
+    - [Messages](#messages)
+    - [Shared Publisher (SP)](#shared-publisher-sp)
+    - [Sequencer](#sequencer)
+  - [Informal Intuition](#informal-intuition)
 
 ## Comparison to V1
 
@@ -198,8 +200,11 @@ Each starting instance is tagged with the current period ID and
 a sequence number, a monotonically increasing counter which
 resets at the beginning of each period.
 Furthermore, it includes a unique identifier for this instance,
-`instance_id`, which is computed as $H(period\_id || sequence\_number || XTRequest)$,
-where $H$ is the SHA-256 cryptographic hash function.
+`instance_id`, which is computed as
+$H(period\_id || sequence\_number || XTRequest)$,
+where $H$ is the SHA-256 cryptographic hash function
+and $XTRequest$ encodes each chain ID, the number of transactions for each chain,
+the length of each transaction and its raw data.
 Note that, in case a request fails and the user retries it
 with the exact same data (accounts' nonces, etc.),
 the `instance_id` will change as it depends on both
