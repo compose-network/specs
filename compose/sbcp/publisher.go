@@ -37,8 +37,8 @@ type Publisher interface {
 }
 
 type PublisherProver interface {
-	// RequestNetworkProof requests a proof for the given superblock number. It's called after all proofs from sequencers have been received.
-	RequestNetworkProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperblockHash, proofs [][]byte) ([]byte, error)
+	// RequestSuperblockProof requests a proof for the given superblock number. It's called after all proofs from sequencers have been received.
+	RequestSuperblockProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperblockHash, proofs [][]byte) ([]byte, error)
 }
 
 type PublisherMessenger interface {
@@ -245,7 +245,7 @@ func (p *publisher) ReceiveProof(periodID compose.PeriodID, superblockNumber com
 	lastSuperblockHash := p.LastFinalizedSuperblockHash
 	p.mu.Unlock()
 
-	networkProof, err := p.prover.RequestNetworkProof(superblockNumber, lastSuperblockHash, seqProofs)
+	networkProof, err := p.prover.RequestSuperblockProof(superblockNumber, lastSuperblockHash, seqProofs)
 	if err != nil {
 		p.logger.Error().
 			Err(err).

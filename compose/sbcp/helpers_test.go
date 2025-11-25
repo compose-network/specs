@@ -75,7 +75,7 @@ type fakePublisherProver struct {
 	err       error
 }
 
-func (p *fakePublisherProver) RequestNetworkProof(superblockNumber compose.SuperblockNumber, hash compose.SuperblockHash, proofs [][]byte) ([]byte, error) {
+func (p *fakePublisherProver) RequestSuperblockProof(superblockNumber compose.SuperblockNumber, hash compose.SuperblockHash, proofs [][]byte) ([]byte, error) {
 	copied := make([][]byte, len(proofs))
 	for i, proof := range proofs {
 		copied[i] = append([]byte(nil), proof...)
