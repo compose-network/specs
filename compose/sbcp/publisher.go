@@ -84,21 +84,26 @@ type publisher struct {
 	PublisherState
 }
 
-// NewPublisher creates a new Publisher instance given a config, a period ID and the last settled state.
-// TargetSuperblockNumber is set to lastFinalizedSuperblockNumber initially.
+// NewPublisher creates a new Publisher instance given a config, a period ID, target superblock number, and the last settled state.
 // StartPeriod needs to be called to start the first period, automatically incrementing PeriodID and TargetSuperblockNumber.
-// Thus, if the current period is N, call NewPublisher with periodID = N-1.
+// Thus, if the current period is N and current superblock target is T, call NewPublisher with periodID = N-1 and target = T-1.
 func NewPublisher(
 	prover PublisherProver,
 	messenger PublisherMessenger,
 	l1 L1,
 	periodID compose.PeriodID,
+	targetSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockHash compose.SuperblockHash,
 	proofWindow uint64,
 	logger zerolog.Logger,
 	chains map[compose.ChainID]struct{},
-) Publisher {
+) (Publisher, error) {
+
+	if targetSuperblockNumber < lastFinalizedSuperblockNumber {
+		return nil, fmt.Errorf("target superblock is less than the last finalized one")
+	}
+
 	return &publisher{
 		mu:        sync.Mutex{},
 		prover:    prover,
@@ -106,7 +111,7 @@ func NewPublisher(
 		l1:        l1,
 		PublisherState: PublisherState{
 			PeriodID:               periodID,
-			TargetSuperblockNumber: lastFinalizedSuperblockNumber,
+			TargetSuperblockNumber: targetSuperblockNumber,
 
 			// Settlement state
 			LastFinalizedSuperblockNumber: lastFinalizedSuperblockNumber,
@@ -122,7 +127,7 @@ func NewPublisher(
 
 			logger: logger,
 		},
-	}
+	}, nil
 }
 
 // StartPeriod is called whenever a new period starts (i.e. CurrEthereumEpoch % 10 == 0).

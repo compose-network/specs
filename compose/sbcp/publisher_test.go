@@ -12,6 +12,7 @@ import (
 
 func newPublisherForTest(
 	period compose.PeriodID,
+	target compose.SuperblockNumber,
 	finalized compose.SuperblockNumber,
 	hash compose.SuperblockHash,
 	window uint64,
@@ -20,14 +21,69 @@ func newPublisherForTest(
 	m := &fakePublisherMessenger{}
 	p := &fakePublisherProver{}
 	l1 := &fakeL1{}
-	pub := NewPublisher(p, m, l1, period, finalized, hash, window, testLogger(), chains)
+	pub, err := NewPublisher(p, m, l1, period, target, finalized, hash, window, testLogger(), chains)
+	if err != nil {
+		panic(err)
+	}
 	return pub, m, p, l1
 }
 
+func TestNewPublisher_rejectsTargetLowerThanFinalized(t *testing.T) {
+	_, err := NewPublisher(
+		&fakePublisherProver{},
+		&fakePublisherMessenger{},
+		&fakeL1{},
+		compose.PeriodID(3),
+		compose.SuperblockNumber(4),
+		compose.SuperblockNumber(5),
+		compose.SuperblockHash{1},
+		0,
+		testLogger(),
+		makeDefaultChainSet(),
+	)
+	require.Error(t, err)
+}
+
+func TestPublisher_StartPeriod_respectsExplicitTarget(t *testing.T) {
+	pub, messenger, _, _ := newPublisherForTest(
+		compose.PeriodID(4),
+		compose.SuperblockNumber(10),
+		compose.SuperblockNumber(7),
+		compose.SuperblockHash{5},
+		0,
+		makeDefaultChainSet(),
+	)
+
+	require.NoError(t, pub.StartPeriod())
+	require.Len(t, messenger.startPeriods, 1)
+	start := messenger.startPeriods[0]
+	assert.Equal(t, compose.PeriodID(5), start.PeriodID)
+	assert.Equal(t, compose.SuperblockNumber(11), start.SuperblockNumber)
+
+	impl := pub.(*publisher)
+	assert.Equal(t, compose.SuperblockNumber(11), impl.TargetSuperblockNumber)
+}
+
+func TestPublisher_StartPeriod_rejectsInitialTargetPastWindow(t *testing.T) {
+	pub, messenger, _, _ := newPublisherForTest(
+		compose.PeriodID(2),
+		compose.SuperblockNumber(12),
+		compose.SuperblockNumber(5),
+		compose.SuperblockHash{3},
+		1,
+		makeDefaultChainSet(),
+	)
+
+	err := pub.StartPeriod()
+	require.ErrorIs(t, err, ErrCannotStartPeriod)
+	assert.Len(t, messenger.startPeriods, 0)
+}
+
 func TestPublisher_StartPeriod_basic_broadcast_and_reset(t *testing.T) {
-	// Start with finalized = 7, target can be arbitrary here
+	// Start with finalized = 7 and target = 7
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(9),
+		compose.SuperblockNumber(7),
 		compose.SuperblockNumber(7),
 		compose.SuperblockHash{9},
 		0,
@@ -50,6 +106,7 @@ func TestPublisher_StartPeriod_error_when_target_exceeds_proof_window(t *testing
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(7),
+		compose.SuperblockNumber(7),
 		compose.SuperblockHash{1},
 		1,
 		makeDefaultChainSet(),
@@ -69,6 +126,7 @@ func TestPublisher_StartPeriod_no_window_constraint_when_disabled(t *testing.T) 
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(7),
+		compose.SuperblockNumber(7),
 		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
@@ -84,6 +142,7 @@ func TestPublisher_StartPeriod_no_window_constraint_when_disabled(t *testing.T) 
 func TestPublisher_StartInstance_disjoint_sets_allowed(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
+		compose.SuperblockNumber(5),
 		compose.SuperblockNumber(5),
 		compose.SuperblockHash{1},
 		0,
@@ -113,6 +172,7 @@ func TestPublisher_StartInstance_conflicting_set_rejected(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(5),
 		compose.SuperblockNumber(5),
+		compose.SuperblockNumber(5),
 		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
@@ -141,6 +201,7 @@ func TestPublisher_StartInstance_participant_dedup(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(2),
 		compose.SuperblockNumber(2),
+		compose.SuperblockNumber(2),
 		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
@@ -160,6 +221,7 @@ func TestPublisher_Sequence_monotonic_and_resets_per_period(t *testing.T) {
 	// Start aligned: target = finalized + 1 = 10
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(10),
+		compose.SuperblockNumber(9),
 		compose.SuperblockNumber(9),
 		compose.SuperblockHash{1},
 		0,
@@ -196,6 +258,7 @@ func TestPublisher_StartInstance_populates_instance_fields(t *testing.T) {
 	pub, messenger, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
 		compose.SuperblockNumber(1),
+		compose.SuperblockNumber(1),
 		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
@@ -216,6 +279,7 @@ func TestPublisher_StartInstance_populates_instance_fields(t *testing.T) {
 func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
+		compose.SuperblockNumber(1),
 		compose.SuperblockNumber(1),
 		compose.SuperblockHash{1},
 		0,
@@ -251,6 +315,7 @@ func TestPublisher_AdvanceSettledState_monotonic(t *testing.T) {
 	pub, _, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
 		compose.SuperblockNumber(1),
+		compose.SuperblockNumber(1),
 		compose.SuperblockHash{1},
 		0,
 		makeDefaultChainSet(),
@@ -267,6 +332,7 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 	finalized := compose.SuperblockNumber(5)
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(3),
+		finalized,
 		finalized,
 		compose.SuperblockHash{7},
 		0,
@@ -289,11 +355,15 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 	assert.Equal(t, compose.PeriodID(3), rb.PeriodID)
 	assert.Equal(t, finalized, rb.SuperblockNumber)
 	assert.Equal(t, compose.SuperblockHash{7}, rb.SuperblockHash)
+
+	impl := pub.(*publisher)
+	assert.Equal(t, finalized+1, impl.TargetSuperblockNumber)
 }
 
 func TestPublisher_StartInstance_invalid_requests(t *testing.T) {
 	pub, m, _, _ := newPublisherForTest(
 		compose.PeriodID(1),
+		compose.SuperblockNumber(1),
 		compose.SuperblockNumber(1),
 		compose.SuperblockHash{1},
 		0,
@@ -316,6 +386,7 @@ func TestPublisher_ReceiveProof_aggregates_and_publishes(t *testing.T) {
 	chains := makeChainSet(compose.ChainID(1), compose.ChainID(2))
 	pub, _, prover, l1 := newPublisherForTest(
 		compose.PeriodID(10),
+		compose.SuperblockNumber(5),
 		compose.SuperblockNumber(5),
 		compose.SuperblockHash{1},
 		0,
@@ -355,6 +426,7 @@ func TestPublisher_ReceiveProof_proverErrorTriggersRollback(t *testing.T) {
 	pub, messenger, prover, l1 := newPublisherForTest(
 		compose.PeriodID(10),
 		compose.SuperblockNumber(5),
+		compose.SuperblockNumber(5),
 		compose.SuperblockHash{9},
 		0,
 		chains,
@@ -381,6 +453,7 @@ func TestPublisher_ReceiveProof_ignores_non_terminated_superblock(t *testing.T) 
 	chains := makeChainSet(compose.ChainID(1), compose.ChainID(2))
 	pub, _, prover, l1 := newPublisherForTest(
 		compose.PeriodID(5),
+		compose.SuperblockNumber(4),
 		compose.SuperblockNumber(4),
 		compose.SuperblockHash{3},
 		0,
