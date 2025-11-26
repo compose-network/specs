@@ -1,13 +1,13 @@
-# Superblock Construction Protocol v2 (SBCP v2) — Minimal Spec Implementation
+# Superblock Construction Protocol (SBCP) — Minimal Spec Implementation
 
 This package provides a minimal,
-testable implementation of the [SBCP v2](./../../superblock_construction_protocol_v2.md)
+testable implementation of the [SBCP](./../../superblock_construction_protocol.md)
 protocol.
 
 ## Publisher
 
 The package provides the `Publisher` interface with the core logic
-for the publisher role in SBCP v2.
+for the publisher role in SBCP.
 It requires the following implementation dependencies:
 - `PublisherProver`: to request network proofs from collected sequencer proofs.
 - `PublisherMessenger`: to broadcast period starts and rollbacks to sequencers.
@@ -78,7 +78,7 @@ classDiagram
 ## Sequencer
 
 The package also provides the `Sequencer` interface with the core logic
-for the sequencer role in SBCP v2.
+for the sequencer role in SBCP.
 It requires the following implementation dependencies:
 - `SequencerProver`: to request proofs for sealed blocks.
 - `SequencerMessenger`: to forward XTRequests to the publisher and send proofs.
