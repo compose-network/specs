@@ -8,6 +8,7 @@ This directory contains the Compose Specification library code.
 - [proto](./proto/README.md): Protocol Buffers definitions for protocol messages.
 - [scp](./scp/README.md): Synchronous Composability Protocol module.
 - [sbcp](./sbcp/README.md): Superblock Construction Protocol module.
+- [cdcp](./cdcp/README.md): Cross-Domain Composability Protocol module.
 
 ## Generating Go Proto Files
 
