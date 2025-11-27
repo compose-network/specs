@@ -10,24 +10,30 @@ Compose—a network of rollups that enjoys synchronous, atomic composability thr
 shared publisher architecture.
 Such a feature is achieved by two mechanisms:
 - a simple two-phase commit protocol that provides coordination
-on the inclusion of a cross-chain transaction.
+  on the inclusion of a cross-chain transaction.
 - a synchronous settlement pipeline, which finalizes all chains
-simultaneously in L1 with a single ZK proof.
+  simultaneously in L1 with a single ZK proof.
 
+Furthermore, it also provides an extra feature for native rollups to
+compose with a single external rollup. This is achieved by extending the coordination
+protocol to depend on the transaction execution of the external rollup.
 
 ## 📖 Reading Guide
 
 To read about the protocol in detail, please check:
 1. [Synchronous Composability Protocol (SCP)](./synchronous_composability_protocol.md):
-the fundamental building block that provides coordination
-on a single cross-chain transaction inclusion.
+   the fundamental building block that provides coordination
+   on a single cross-chain transaction inclusion.
 2. [Superblock Construction Protocol (SBCP)](./superblock_construction_protocol.md):
-the orchestration layer that manages multiple SCP instances,
-block construction, and defines the triggering and input for the settlement pipeline.
+   the orchestration layer that manages multiple SCP instances,
+   block construction, and defines the triggering and input for the settlement pipeline.
 3. [Settlement Layer](./settlement_layer.md):
-explains the settlement pipeline of Compose,
-picturing the recursive ZK programs architecture which
-outputs a single ZK proof about the state progress of the entire chain.
+   explains the settlement pipeline of Compose,
+   picturing the recursive ZK programs architecture which
+   outputs a single ZK proof about the state progress of the entire chain.
+4. [Cross-Domain Composability Protocol (CDCP)](./cross_domain_composability_protocol.md):
+   an extension to SCP that enables atomic execution
+   between Compose native rollups and an external rollup.
 
 ## 📝 Minimal Spec Lib Implementation
 
