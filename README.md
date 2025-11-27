@@ -24,7 +24,7 @@ To read about the protocol in detail, please check:
 1. [Synchronous Composability Protocol (SCP)](./synchronous_composability_protocol.md):
 the fundamental building block that provides coordination
 on a single cross-chain transaction inclusion.
-2. [Superblock Construction Protocol (SBCP) v2](./superblock_construction_protocol_v2.md):
+2. [Superblock Construction Protocol (SBCP)](./superblock_construction_protocol.md):
 the orchestration layer that manages multiple SCP instances,
 block construction, and defines the triggering and input for the settlement pipeline.
 3. [Settlement Layer](./settlement_layer.md):

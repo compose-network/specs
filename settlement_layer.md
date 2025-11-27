@@ -42,7 +42,7 @@ Moreover, the SP will execute a final ZK program that verifies each L2 batch pro
 The settlement mechanism proves activity for a batch of blocks.
 Therefore, sequencers must be synchronized on when a batch starts and ends,
 and, most importantly, on which cross-chain transactions belong to a certain batch.
-This is accomplished by the [SBCP](./superblock_construction_protocol_v2.md)
+This is accomplished by the [SBCP](./superblock_construction_protocol.md)
 protocol.
 
 > [!TIP]
@@ -52,7 +52,7 @@ protocol.
 > However, A proves the range [X-B, X] while B proves the range [Y+1-B, Y+1].
 > Once mailbox consistency is checked, the mailbox state of B will be slightly more advanced than A's, and thus the mailbox consistency check may fail.
 
-As described in the [SBCP](./superblock_construction_protocol_v2.md) document,
+As described in the [SBCP](./superblock_construction_protocol.md) document,
 sequencers start the settlement pipeline locally once the
 last block for a period is produced.
 Once the proof is generated, it's sent to the SP, via the `Proof` message,

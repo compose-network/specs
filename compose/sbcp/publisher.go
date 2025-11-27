@@ -37,8 +37,8 @@ type Publisher interface {
 }
 
 type PublisherProver interface {
-	// RequestNetworkProof requests a proof for the given superblock number. It's called after all proofs from sequencers have been received.
-	RequestNetworkProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperblockHash, proofs [][]byte) ([]byte, error)
+	// RequestSuperblockProof requests a proof for the given superblock number. It's called after all proofs from sequencers have been received.
+	RequestSuperblockProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperblockHash, proofs [][]byte) ([]byte, error)
 }
 
 type PublisherMessenger interface {
@@ -84,29 +84,34 @@ type publisher struct {
 	PublisherState
 }
 
-// NewPublisher creates a new Publisher instance given a config, a period ID and the last settled state.
-// TargetSuperblockNumber is set to lastFinalizedSuperblockNumber initially.
-// StartPeriod needs to be called to start the first period, automatically incrementing PeriodID and TargetSuperblockNumber.
-// Thus, if the current period is N, call NewPublisher with periodID = N-1.
+// NewPublisher creates a new Publisher instance given a config, the immediate previous period ID, previous target superblock number, and the last settled state.
+// The StartPeriod function needs to be called to start the first period, automatically incrementing PeriodID and TargetSuperblockNumber.
+// Thus, if the current period is N and current superblock target is T, call NewPublisher with periodID = N-1 and target = T-1.
 func NewPublisher(
 	prover PublisherProver,
 	messenger PublisherMessenger,
 	l1 L1,
-	periodID compose.PeriodID,
+	previousPeriodID compose.PeriodID,
+	previousTargetSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockHash compose.SuperblockHash,
 	proofWindow uint64,
 	logger zerolog.Logger,
 	chains map[compose.ChainID]struct{},
-) Publisher {
+) (Publisher, error) {
+
+	if previousTargetSuperblockNumber < lastFinalizedSuperblockNumber {
+		return nil, fmt.Errorf("target superblock is less than the last finalized one")
+	}
+
 	return &publisher{
 		mu:        sync.Mutex{},
 		prover:    prover,
 		messenger: messenger,
 		l1:        l1,
 		PublisherState: PublisherState{
-			PeriodID:               periodID,
-			TargetSuperblockNumber: lastFinalizedSuperblockNumber,
+			PeriodID:               previousPeriodID,
+			TargetSuperblockNumber: previousTargetSuperblockNumber,
 
 			// Settlement state
 			LastFinalizedSuperblockNumber: lastFinalizedSuperblockNumber,
@@ -122,7 +127,7 @@ func NewPublisher(
 
 			logger: logger,
 		},
-	}
+	}, nil
 }
 
 // StartPeriod is called whenever a new period starts (i.e. CurrEthereumEpoch % 10 == 0).
@@ -245,7 +250,7 @@ func (p *publisher) ReceiveProof(periodID compose.PeriodID, superblockNumber com
 	lastSuperblockHash := p.LastFinalizedSuperblockHash
 	p.mu.Unlock()
 
-	networkProof, err := p.prover.RequestNetworkProof(superblockNumber, lastSuperblockHash, seqProofs)
+	networkProof, err := p.prover.RequestSuperblockProof(superblockNumber, lastSuperblockHash, seqProofs)
 	if err != nil {
 		p.logger.Error().
 			Err(err).
