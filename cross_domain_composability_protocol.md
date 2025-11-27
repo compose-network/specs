@@ -38,227 +38,123 @@ The WS is expected to have a communication channel with the ER.
 
 For now, no byzantine faults are considered in the system.
 
-## Mailbox
+## External Mailbox
 
 Native rollups are assumed to have the standard [`Mailbox`](TODO) contract deployed.
-External rollups will have a slightly modified version of the `Mailbox` contract, called `StagedMailbox`.
+External rollups will have a slightly modified version of the `Mailbox` contract.
 
-In the `StagedMailbox`, all messages are pre-populated by the WS:
+In the `ExternalMailbox`, all messages are pre-populated by the WS:
 - `read` is similar to the standard `Mailbox`, in which it's confirmed that the message exists and its data is returned.
 - `write` is modified to ensure that the written message was pre-populated by the WS.
 
 We will see how this pre-population works in the protocol description.
-Next, we present the `StagedMailbox` contract.
+Next, we present the `ExternalMailbox` contract.
 
-```solidity
-contract StagedMailbox {
+```text
+CONTRACT ExternalMailbox:
 
-    struct MessageHeader {
-        // Origin tuple
-        uint256 chainSrc;
-        uint256 chainDest;
-        // Recipient tuple
-        address sender;
-        address receiver;
-        // Nonce per user intent
-        uint256 sessionId;
-        // Label for the message (e.g. "deposit", "withdraw", etc.)
-        bytes label;
-    }
+    STRUCT MessageHeader:
+        uint chainSrc
+        uint chainDest
+        address sender
+        address receiver
+        uint sessionId
+        bytes label
 
-    /// @notice The wrapped sequencer address with special permissions.
-    address public immutable COORDINATOR;
+    CONSTANT COORDINATOR (immutable address)
 
-    /// Settlement data (chain-specific inbox and outbox roots)
-    /// @notice List of chain IDs with messages in the inbox
-    uint256[] public chainIDsInbox;
-    /// @notice List of chain IDs with messages in the outbox
-    uint256[] public chainIDsOutbox;
-    /// @notice Mapping of chain ID to inbox root
-    mapping(uint256 chainId => bytes32 inboxRoot) public inboxRootPerChain;
-    /// @notice Mapping of chain ID to outbox root
-    mapping(uint256 chainId => bytes32 outboxRoot) public outboxRootPerChain;
-
-    /// @notice Inbox messages (to this chain)
-    mapping(bytes32 key => bytes message) public inbox;
-    /// @notice Outbox messages (from this chain)
-    mapping(bytes32 key => bytes message) public outbox;
-    /// @notice Created keys (to avoid overwrites)
-    mapping(bytes32 key => bool used) public createdKeys;
-    /// @notice Keys that have been already used in operations (to avoid replays)
-    mapping(bytes32 key => bool used) public usedKeys;
-
-    /// @notice Keccak256 hash of the message header fields
-    function getKey(
-        uint256 srcChainID,
-        uint256 destChainID,
-        address sender,
-        address receiver,
-        uint256 sessionId,
-        bytes calldata label
-    ) public pure returns (bytes32 key) {
-        key = keccak256(
-            abi.encodePacked(srcChainID, destChainID, sender, receiver, sessionId, label)
-        );
-    }
-
-    function putInbox(
-        uint256 srcChainID,
-        address sender,
-        address receiver,
-        uint256 sessionId,
-        bytes calldata label,
-        bytes calldata data
-    ) external onlyCoordinator {
-        // Generate message key
-        bytes32 key = getKey(
-            srcChainID,  // message origin
-            block.chainid,  // this chain is the destination chain
-            sender, receiver,
-            sessionId,
-            label
-        );
-
-        // If key already exists, revert
-        if (createdKeys[key]) {
-            revert("Key already exists");
-        }
-
-        // Store message
-        inbox[key] = data;
-        createdKeys[key] = true;
-    }
-
-    function putOutbox(
-        uint256 destChainID,
-        address sender,
-        address receiver,
-        uint256 sessionId,
-        bytes calldata label,
-        bytes calldata data
-    ) external onlyCoordinator {
-        // Generate message key
-        bytes32 key = getKey(
-            block.chainid,  // this chain is the message origin
-            destChainID,  // message destination
-            sender, receiver,
-            sessionId,
-            label
-        );
-
-        // If key already exists, revert
-        if (createdKeys[key]) {
-            revert("Key already exists");
-        }
-
-        // Store message
-        outbox[key] = data;
-        createdKeys[key] = true;
-    }
+    STORAGE:
+        array<uint> chainIDsInbox
+        array<uint> chainIDsOutbox
+        map<uint => bytes32> inboxRootPerChain
+        map<uint => bytes32> outboxRootPerChain
+        map<bytes32 => bytes> inbox
+        map<bytes32 => bytes> outbox
+        map<bytes32 => bool> createdKeys
+        map<bytes32 => bool> usedKeys
 
 
+    FUNCTION getKey(srcChainID, destChainID, sender, receiver, sessionId, label)
+        RETURN keccak256(encode(srcChainID, destChainID, sender, receiver, sessionId, label))
 
-    /// @notice Read a message from the inbox if it exists. If not, reverts.
-    /// @dev If the message exists, the read is confirmed and the inbox root is updated.
-    function read(
-        uint256 srcChainID,
-        address sender,
-        uint256 sessionId,
-        bytes calldata label
-    ) external view returns (bytes memory message) {
-        // Generate message key
-        bytes32 key = getKey(
-            srcChainID, // other chain is the sender
-            block.chainid, // this chain is receiver
-            sender,
-            msg.sender,
-            sessionId,
-            label
-        );
 
-        // If the message does not exist, revert
-        if (!createdKeys[key]) {
-            revert MessageNotFound();
-        }
+    FUNCTION putInbox(srcChainID, sender, receiver, sessionId, label, data)
+        REQUIRE caller == COORDINATOR
 
-        // If the message has already been used, revert
-        if (usedKeys[key]) {
-            revert MessageAlreadyUsed();
-        }
+        key = getKey(srcChainID, currentChainID, sender, receiver, sessionId, label)
 
-        // Message is valid to be read.
+        IF createdKeys[key] == true:
+            REVERT "Key already exists"
 
-        // Mark as used
-        usedKeys[key] = true;
+        inbox[key] = data
+        createdKeys[key] = true
 
-        // Get message data
-        bytes memory data = inbox[key];
 
-        // Update the chain-specific inbox root
-        if (inboxRootPerChain[srcChainID] == bytes32(0)) {
-            chainIDsInbox.push(srcChainID);
-        }
-        inboxRootPerChain[srcChainID] = keccak256(
-            abi.encode(inboxRootPerChain[srcChainID], key, data)
-        );
+    FUNCTION putOutbox(destChainID, sender, receiver, sessionId, label, data)
+        REQUIRE caller == COORDINATOR
 
-        // Return message data
-        return data;
-    }
+        key = getKey(currentChainID, destChainID, sender, receiver, sessionId, label)
 
-    /// @notice Writes a message to another chain.
-    /// @dev This function can be called by other contracts in this chain.
-    /// @dev For the staged mailbox, any message content is pre-populated by the Coordinator.
-    /// @dev Thus, we gotta confirm that this message was really pre-populated, else it reverts.
-    /// @dev Also, if the message exists and wasn't yet used, it marks it as used and updates the outbox root.
-    function write(
-        uint256 destChainID,
-        address receiver,
-        uint256 sessionId,
-        bytes calldata label,
-        bytes calldata data
-    ) external {
-        // Generate message key
-        bytes32 key = getKey(
-            block.chainid,  // this chain is the message sender
-            destChainID, // chain destination
-            msg.sender,
-            receiver,
-            sessionId,
-            label
-        );
+        IF createdKeys[key] == true:
+            REVERT "Key already exists"
 
-        // If the message does not exist, revert
-        if (!createdKeys[key]) {
-            revert MessageNotFound();
-        }
-        // If the message has already been used, revert
-        if (usedKeys[key]) {
-            revert MessageAlreadyUsed();
-        }
-        // If data doesn't match the pre-populated message data, revert
-        if (keccak256(outbox[key]) != keccak256(data)) {
-            revert MessageDataMismatch();
-        }
+        outbox[key] = data
+        createdKeys[key] = true
 
-        // Written operation is safe and valid.
 
-        // Mark as used
-        usedKeys[key] = true;
+    FUNCTION read(srcChainID, sender, sessionId, label)
+        key = getKey(srcChainID, currentChainID, sender, caller, sessionId, label)
 
-        // Get message data
-        bytes memory data = outbox[key];
+        IF createdKeys[key] == false:
+            REVERT MessageNotFound
 
-        // Update the chain-specific outbox root
-        if (outboxRootPerChain[destChainID] == bytes32(0)) {
-            chainIDsOutbox.push(destChainID);
-        }
-        outboxRootPerChain[destChainID] = keccak256(
-            abi.encode(outboxRootPerChain[destChainID], key, data)
-        );
-    }
-}
+        IF usedKeys[key] == true:
+            REVERT MessageAlreadyUsed
+
+        usedKeys[key] = true
+        data = inbox[key]
+        
+        # Message is valid to be read.
+
+        IF srcChainID not in inboxRootPerChain:
+            append srcChainID to chainIDsInbox
+
+        inboxRootPerChain[srcChainID] =
+            keccak256(encode(inboxRootPerChain[srcChainID], key, data))
+
+        RETURN data
+
+
+    FUNCTION write(destChainID, receiver, sessionId, label, data)
+        key = getKey(currentChainID, destChainID, caller, receiver, sessionId, label)
+
+        IF createdKeys[key] == false:
+            REVERT MessageNotFound
+
+        IF usedKeys[key] == true:
+            REVERT MessageAlreadyUsed
+
+        IF hash(outbox[key]) != hash(data):
+            REVERT MessageDataMismatch
+            
+        # Message is was pre-populated and so the write operation is valid to be executed.
+
+        usedKeys[key] = true
+        data = outbox[key]
+
+        IF destChainID not in outboxRootPerChain[destChainID]:
+            append destChainID to chainIDsOutbox
+
+        outboxRootPerChain[destChainID] =
+            keccak256(encode(outboxRootPerChain[destChainID], key, data))
 ```
+
+> [!NOTE]
+> In the Solidity contract, the storage layout of the `chainIDsInbox`,
+> `chainIDsOutbox`, `inboxRootPerChain`, and `outboxRootPerChain` variables are
+> used in the settlement protocol, which perform `eth_getProof` calls to retrieve
+> the contract storage state. Thus, it's recommended that these varibles
+> occupy the 1st, 2nd, 3rd and 4th slots, respectively.
 
 > [!TIP]
 > Space optimizations can be made to the contract by letting the `read` and `write` calls automatically remove used messages from storage.
@@ -604,7 +500,7 @@ Due to the settlement dependency, a proper session management system will be req
 ## WS - ER Sync
 
 For simulating transactions, the WS needs a snapshot of the ER's state, which influences the contents of any message written to other chains.
-Once the `safe_execute` tx is submitted to the ER, it will be re-executed with the ER's current state, and it will only succeed if the written messages are the same as the ones simulated (pre-populated in the StagedMailbox).
+Once the `safe_execute` tx is submitted to the ER, it will be re-executed with the ER's current state, and it will only succeed if the written messages are the same as the ones simulated (pre-populated in the ExternalMailbox).
 Therefore, to maximize the probability of success, the WS should have the most recent state possible.
 
 For that, the WS will be constantly syncing the ER's state.
@@ -732,7 +628,7 @@ pub struct StorageProof {
 ```
 
 It consists of a `post_state_root` block reference and several [`eth_getProof`](https://www.quicknode.com/docs/ethereum/eth_getProof)
-outputs for fetching the mailbox state described in the `StagedMailbox` contract.
+outputs for fetching the mailbox state described in the `ExternalMailbox` contract.
 
 More precisely:
 - The `post_state_root` field represents the last ER's block state root associated to the superblock period.
@@ -800,5 +696,5 @@ procedure WS_ZK_Program(input: WSInput) -> WSOutput:
 The SP zk program should be adjusted to accept the WSOutput as an additional input.
 The SP then needs to:
 - Verify the proof for `WSOutput`.
-- Verify that `WSOutput.mailbox_contract` matches the expected StagedMailbox address for the WS.
+- Verify that `WSOutput.mailbox_contract` matches the expected ExternalMailbox address for the WS.
 - As done for other rollups, verify that the `WSOutput.mailbox_root` is correct considering list of mailbox roots, and match these roots against native ones. 
