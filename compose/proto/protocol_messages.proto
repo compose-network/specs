@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package compose;
+
+option go_package = "github.com/compose-network/specs/compose/proto";
+
+// option go_package = "github.com/compose-network/specs/compose/proto;compose";
+
+// Connection-level authentication handshake messages
+message HandshakeRequest {
+  int64 timestamp = 1;           // Client timestamp for replay protection
+  bytes public_key = 2;          // Client's public key (33 bytes compressed)
+  bytes signature = 3;           // ECDSA signature over timestamp
+  string client_id = 4;          // Optional client identifier
+  bytes nonce = 5;           // Random nonce for replay protection
+}
+
+message HandshakeResponse {
+  bool accepted = 1;             // Whether authentication succeeded
+  string error = 2;              // Error message if rejected
+  string session_id = 3;         // Unique session identifier
+}
+
+// Connection health check messages
+message Ping {
+  int64 timestamp = 1; // Timestamp for latency measurement
+}
+
+message Pong {
+  int64 timestamp = 1; // Echo back the timestamp from Ping
+}
+
+// =============================================================================
+// SYNCHRONOUS COMPOSABILITY PROTOCOL (SCP) MESSAGES
+// =============================================================================
+
+// It's used that InstanceID <- hash(period_id + sequence_number + xt_request)
+
+
+// TransactionRequest represents a request of multiple transactions for a specific chain
+message TransactionRequest {
+  uint64 chain_id = 1;
+  repeated bytes transaction = 2; // RLP encoded Ethereum transactions
+}
+
+// Cross-chain transaction request with multiple requests (one per chain)
+message XTRequest {
+  repeated TransactionRequest transaction_requests = 1;
+}
+
+// Message to start cross-chain transaction coordination
+message StartInstance {
+  bytes instance_id = 1; // Unique instance ID
+  uint64 period_id = 2; // Current period ID
+  uint64 sequence_number = 3; // Sequence number for ordering within the period
+  XTRequest xt_request = 4; // The cross-chain transaction request
+}
+
+// 2PC Vote message from a sequencer to the SP
+message Vote {
+  bytes instance_id = 1; // Instance ID
+  uint64 chain_id = 2; // Which chain is voting
+  bool vote = 3; // true = Commit, false = Abort
+}
+
+// 2PC Decision message from the SP to sequencers
+message Decided {
+  bytes instance_id = 1; // Instance ID
+  bool decision = 2; // true = Commit, false = Abort
+}
+
+// Direct Mailbox message exchange between sequencers (without SP involvement)
+message MailboxMessage {
+  uint64 session_id = 1;
+  bytes instance_id = 2;
+  uint64 source_chain = 3;
+  uint64 destination_chain = 4;
+  bytes source = 5;
+  bytes receiver = 6;
+  string label = 7;
+  repeated bytes data = 8; // ABI encoded data
+}
+
+// =============================================================================
+// SUPERBLOCK CONSTRUCTION PROTOCOL V2 (SBCP) MESSAGES
+// =============================================================================
+
+
+// Message sent by SP to start a new period
+message StartPeriod {
+  uint64 period_id = 1; // New period id
+  uint64 superblock_number = 2; // Superblock number SP aims to produce
+}
+
+// Message sent by SP to rollback and restart from a valid state
+message Rollback {
+  uint64 period_id = 1; // Current period id
+  uint64 last_finalized_superblock_number = 2; // Last finalized superblock number
+  bytes last_finalized_superblock_hash = 3; // Last finalized superblock hash
+}
+
+// Message sent by sequencers to SP containing their proof for a superblock
+message Proof {
+  uint64 period_id = 1;
+  uint64 superblock_number = 2;
+  bytes proof_data = 3;
+}
+
+// =============================================================================
+// CROSS-DOMAIN COMPOSABILITY PROTOCOL (CDCP) NEW MESSAGES
+// =============================================================================
+
+// Uses StartInstance, MailboxMessage, Vote, Decided defined above
+
+// SP sends to the WS after collecting votes
+message NativeDecided {
+  bytes instance_id = 1;
+  bool decision = 2;
+}
+
+// WS sends to the SP after getting the response from ER client
+message WSDecided {
+  bytes instance_id = 1;
+  bool decision = 2;
+}
+
+// Wrapper for all messages
+message Message {
+  string sender_id = 1; // Identifier of the sender
+  // Payload contains the actual message content
+  oneof payload {
+
+    // Connection-level authentication
+    HandshakeRequest handshake_request = 2;
+    HandshakeResponse handshake_response = 3;
+
+    // Connection health check
+    Ping ping = 4;
+    Pong pong = 5;
+
+    // SCP
+    XTRequest xt_request = 6;
+    StartInstance start_instance = 7;
+    Vote vote = 8;
+    Decided decided = 9;
+    MailboxMessage mailbox_message = 10;
+
+    // SBCP messages
+    StartPeriod start_period = 11;
+    Rollback rollback = 12;
+
+    // CDCP
+    NativeDecided native_decided = 13;
+    WSDecided ws_decided = 14;
+  }
+}
