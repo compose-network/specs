@@ -7,7 +7,7 @@ The atomicity property refers to the guarantee that either both rollups successf
 
 - [Native vs. External Rollups](#native-vs-external-rollups)
 - [System Model](#system-model)
-- [Mailbox](#mailbox)
+- [Mailbox](#external-mailbox)
 - [Protocol](#protocol)
   - [Messages](#messages)
   - [Pseudo-code](#pseudo-code)
@@ -40,7 +40,7 @@ For now, no byzantine faults are considered in the system.
 
 ## External Mailbox
 
-Native rollups are assumed to have the standard [`Mailbox`](TODO) contract deployed.
+Native rollups are assumed to have the standard [`Mailbox`](./synchronous_composability_protocol.md) contract deployed.
 External rollups will have a slightly modified version of the `Mailbox` contract.
 
 In the `ExternalMailbox`, all messages are pre-populated by the WS:
@@ -163,7 +163,7 @@ CONTRACT ExternalMailbox:
 
 Similarly to the SCP protocol, the SP initiates the execution by sending a start message, `StartCDCP`, to NSs and WS.
 
-Then, each NS runs **exactly** the protocol rules of the [SCP protocol](TODO). Namely:
+Then, each NS runs **exactly** the protocol rules of the [SCP protocol](./synchronous_composability_protocol.md). Namely:
 1. Once it receives the `StartCDCP` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
 2. Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
 3. Once a `mailbox.Write` operation is intercepted, it sends a `Mailbox` message to the counterparty chain sequencer (either the WS or another NS).
@@ -202,19 +202,20 @@ The Wrapped Sequencer (WS) has the following rules:
 
 The special atomic transaction to the ER, `safe_execute`, allows an atomic execution of the mailbox staging and the main transaction.
 It has the following pseudo-code:
-```solidity
-function safe_execute(inboxMsgs, outboxMsgs, mainTx) external {
-    // 1. Pre-populate the inbox messages
-    for (msg in inboxMsgs) {
-        externalMailbox.putInbox(msg...)
-    }
-    // 2. Pre-populate the outbox messages
-    for (msg in outboxMsgs) {
-        externalMailbox.putOutbox(msg...)
-    }
-    // 3. Execute the main transaction
-    call mainTx();
-}
+```text
+FUNCTION safe_execute(inboxMsgs, outboxMsgs, txs):
+
+    # 1. Pre-populate inbox messages in ExternalMailbox
+    FOR each msg IN inboxMsgs:
+        ExternalMailbox.putInbox(msg...)
+
+    # 2. Pre-populate outbox messages in ExternalMailbox
+    FOR each msg IN outboxMsgs:
+        ExternalMailbox.putOutbox(msg...)
+
+    # 3. Execute the transactions
+    FOR each tx IN txs:
+        CALL tx()
 ```
 
 **Sequence diagram**
