@@ -137,6 +137,7 @@ func (p *publisher) StartPeriod() error {
 	defer p.mu.Unlock()
 
 	nextSuperblock := p.TargetSuperblockNumber + 1
+	nextPeriodID := p.PeriodID + 1
 
 	// Proof window constrain
 	// If the oldest pending superblock is older than ProofWindow, reject starting the new period
@@ -148,15 +149,14 @@ func (p *publisher) StartPeriod() error {
 		}
 	}
 
-	p.PeriodID++
-	p.TargetSuperblockNumber = nextSuperblock
-
 	p.logger.Info().
-		Uint64("new_period_id", uint64(p.PeriodID)).
-		Uint64("target_superblock_number", uint64(p.TargetSuperblockNumber)).
+		Uint64("new_period_id", uint64(nextPeriodID)).
+		Uint64("target_superblock_number", uint64(nextSuperblock)).
 		Msg("Starting new period")
 
-	p.messenger.BroadcastStartPeriod(p.PeriodID, p.TargetSuperblockNumber)
+	p.messenger.BroadcastStartPeriod(nextPeriodID, nextSuperblock)
+	p.TargetSuperblockNumber = nextSuperblock
+	p.PeriodID = nextPeriodID
 
 	p.SequenceNumber = 0
 	return nil
