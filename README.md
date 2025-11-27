@@ -39,6 +39,10 @@ between Compose native rollups and an external rollup.
 
 This repo contains a [minimal implementation](./compose/README.md) of the core logic of the proposed protocols.
 
+## 📝 Minimal Spec Lib Implementation
+
+This repo contains a [minimal implementation](./compose/README.md) of the core logic of the proposed protocols.
+
 ## ⚙️ Rollup Integration
 
 Compose’s proposed modules do not fully specify every layer of a rollup.
