@@ -172,7 +172,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 	r.votes[sender] = vote
 
 	// If any vote is false, decide false immediately
-	if vote == false {
+	if !vote {
 		r.logger.Info().
 			Uint64("chain_id", uint64(sender)).
 			Msg("Received reject vote, rejecting instance")
