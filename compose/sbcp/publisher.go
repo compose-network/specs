@@ -84,15 +84,15 @@ type publisher struct {
 	PublisherState
 }
 
-// NewPublisher creates a new Publisher instance given a config, a period ID, target superblock number, and the last settled state.
-// StartPeriod needs to be called to start the first period, automatically incrementing PeriodID and TargetSuperblockNumber.
+// NewPublisher creates a new Publisher instance given a config, the immediate previous period ID, previous target superblock number, and the last settled state.
+// The StartPeriod function needs to be called to start the first period, automatically incrementing PeriodID and TargetSuperblockNumber.
 // Thus, if the current period is N and current superblock target is T, call NewPublisher with periodID = N-1 and target = T-1.
 func NewPublisher(
 	prover PublisherProver,
 	messenger PublisherMessenger,
 	l1 L1,
-	periodID compose.PeriodID,
-	targetSuperblockNumber compose.SuperblockNumber,
+	previousPeriodID compose.PeriodID,
+	previousTargetSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockNumber compose.SuperblockNumber,
 	lastFinalizedSuperblockHash compose.SuperblockHash,
 	proofWindow uint64,
@@ -100,7 +100,7 @@ func NewPublisher(
 	chains map[compose.ChainID]struct{},
 ) (Publisher, error) {
 
-	if targetSuperblockNumber < lastFinalizedSuperblockNumber {
+	if previousTargetSuperblockNumber < lastFinalizedSuperblockNumber {
 		return nil, fmt.Errorf("target superblock is less than the last finalized one")
 	}
 
@@ -110,8 +110,8 @@ func NewPublisher(
 		messenger: messenger,
 		l1:        l1,
 		PublisherState: PublisherState{
-			PeriodID:               periodID,
-			TargetSuperblockNumber: targetSuperblockNumber,
+			PeriodID:               previousPeriodID,
+			TargetSuperblockNumber: previousTargetSuperblockNumber,
 
 			// Settlement state
 			LastFinalizedSuperblockNumber: lastFinalizedSuperblockNumber,
