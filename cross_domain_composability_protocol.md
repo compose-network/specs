@@ -11,8 +11,8 @@ The atomicity property refers to the guarantee that either both rollups successf
 - [Protocol](#protocol)
   - [Messages](#messages)
   - [Pseudo-code](#pseudo-code)
-  - [Transitive Dependency & Sessions](#transitive-dependency--sessions)
-- [WS - ER Sync](#ws---er-sync)
+- [Transitive Dependency & Sessions](#transitive-dependency--sessions)
+- [WS—ER Sync](#wser-sync)
 - [Settlement](#settlement)
   - [WS ZK Program](#ws-zk-program)
   - [SP Program Modifications](#sp-program-modifications)
@@ -281,249 +281,149 @@ message WSDecided {
 **CDCP Algorithm for the Shared Publisher**
 
 ```py
-enum SPState { INIT, WAIT_NATIVE, WAIT_WS, DONE }
+procedure start(instance, erChain):
+    nativeChains = instance.chains - {erChain}
+    votes = {}
+    state = WAIT_NATIVE
+    timer = start_timer()
 
-# ===== Per-xTid record =====
-record SPContext {
-  state: SPState
-  superblock: uint64
-  xTid: bytes32
-  xReq: XTRequest
-  nativeChains: Set<ChainID>    // the NSs expected to vote
-  votes: Map<ChainID, bool>     // chainID -> decision
-  timer: TimerHandle
-  wsAddress: Address            // WS responsible for external rollup
-  timeoutMs: uint64
-}
+    broadcast(nativeChains, StartInstance(instance))
+    send(erChain, StartInstance(instance))
 
-# ===== API =====
-function SP_StartCDCP(superblock, seqNo, xReq, xTid, nativeChains, wsAddress, timeoutMs):
-  ctx = new SPContext
-  ctx.state = INIT
-  ctx.superblock = superblock
-  ctx.xTid = xTid
-  ctx.xReq = xReq
-  ctx.nativeChains = nativeChains
-  ctx.wsAddress = wsAddress
-  ctx.timeoutMs = timeoutMs
+on Vote(chainID, vote):
+    if state != WAIT_NATIVE or chainID not in nativeChains:
+        return
+    if chainID in votes:                     
+        return # duplicate vote
 
-  # 1. Broadcast StartCDCP to all NSs and the WS
-  broadcast_to(nativeChains, StartCDCP{superblock, seqNo, xReq, xTid})
-  send(wsAddress, StartCDCP{superblock, seqNo, xReq, xTid})
+    votes[chainID] = vote
 
-  # 2. Move to WAIT_NATIVE and set timer
-  ctx.state = WAIT_NATIVE
-  ctx.timer = set_timer(xTid, timeoutMs)
+    if vote == 0:
+        stop_timer(timer)
+        broadcast(nativeChains, Decided(0))
+        send(erChain, NativeDecided(0))
+        state = DONE
+        return
 
+    if len(votes) == len(nativeChains):
+        stop_timer(timer)
+        send(erChain, NativeDecided(1))
+        state = WAIT_WS
 
-# ===== Event Handlers =====
+on WSDecided(from, decision):
+    if from != erChain or state == DONE:
+        return
+    if decision == 1 and state == WAIT_NATIVE:
+        # should not happen as WS can only vote after it receives a NativeDecided
+        error("WSDecided(1) before NativeDecided")
 
-# NS -> SP Votes
-on_receive(fromNS, Vote{superblock, xTid, chainID, decision}):
-  if ctx.state != WAIT_NATIVE: return
+    broadcast(nativeChains, Decided(decision))
+    state = DONE
+    # Note that a WS failure is final even if native votes are still pending.
 
-  # Ignore unexpected chain IDs
-  if chainID not in ctx.nativeChains: return
-
-  # Ignore duplicate votes
-  if chainID in ctx.votes: return
-
-  # Record vote
-  ctx.votes[chainID] = decision
-
-  # Fast-fail: any 0 vote or duplicate negative overrides success
-  if decision == 0:
-    cancel_timer(ctx.timer)
-    # Failure path: tell NSs and WS
-    broadcast_to(ctx.nativeChains, Decided{ctx.superblock, xTid, 0})
-    send(ctx.wsAddress, NativeDecided{ctx.superblock, xTid, 0})
-    ctx.state = DONE
-    return
-
-  # Check if all NSs voted 1
-  if all(chain in ctx.votes and ctx.votes[chain] == true for chain in ctx.nativeChains):
-    # All-positive: inform WS that NSs are ready
-    cancel_timer(ctx.timer)
-    send(ctx.wsAddress, NativeDecided{ctx.superblock, xTid, true})
-    # Wait for WS decision to finalize
-    ctx.state = WAIT_WS
-
-
-# WS -> SP Final decision
-on_receive(fromWS, WSDecided{superblock, xTid, Decision}):
-  if ctx.state != WAIT_WS: return
-
-  # Relay result to NSs
-  broadcast_to(ctx.nativeChains, Decided{ctx.superblock, xTid, Decision})
-  ctx.state = DONE
-
-
-# Timeouts
-on_timer_fired(xTid):
-  if ctx.state == WAIT_NATIVE:
-    # Timeout before native unanimity
-    broadcast_to(ctx.nativeChains, Decided{ctx.superblock, xTid, 0})
-    send(ctx.wsAddress, NativeDecided{ctx.superblock, xTid, 0})
-    ctx.state = DONE
+on timer_fired(timer):
+    if state == WAIT_NATIVE:
+        broadcast(nativeChains, Decided(0))
+        send(erChain, NativeDecided(0))
+        state = DONE
 ```
 
 **CDCP Algorithm for the Wrapped Sequencer**
 ```py
+state = SIMULATING
+txs = transactions_for_chain(xReq, erChain)
+putInbox = []          # messages that will be pre-populated via putInbox
+putOutbox = []         # messages that will be pre-populated via putOutbox
+pendingMailbox = []    # mailbox messages received from other chains
+expectedReads = []     # read requests produced by simulations
+writtenCache = set()   # prevents re-broadcasting identical writes
+nativeDecided = None
+# fixed state-root snapshot which every simulation should be executed on top
+state_root = get_current_state_root()
 
-enum WSState { INIT, SIMULATING, WAIT_NATIVE_DECIDED, SUBMIT_TO_ER, DONE }
+procedure start():
+    run_simulation()
 
-# Local simulation hooks interface:
-function simulate_with_mailbox_tracer(txList, handlers) -> SimResult
-# SimResult: { success: bool, failReason: enum{NONE, READ_MISS, WRITE_MISS, OTHER}, readContext?, writeContext? }
+procedure run_simulation():
+    if state != SIMULATING:
+        return
 
-# Driver that creates the final atomic ER transaction that:
-#  - pre-populates inbox/outbox
-#  - executes the main transaction
-function build_and_send_ER_atomic_tx(ctx) -> ERResult
+    resp = simulate_safe_execute(state_root, putInbox, putOutbox, txs)
 
-# ===== Per-session record =====
-record WSContext {
-  chainID: uint32
-  state: WSState
-  superblock: uint64
-  xTid: bytes32
-  xReq: XTRequest
+    if resp.error exists:
+        send(SP, WSDecided(0))
+        state = DONE
+        return
 
-  txMain: Transaction                   # transaction for the external rollup
-  mailboxTxs: List<Transaction>         # Mailbox txs that are populated (in/out) before txMain
-  pendingMailboxMsgs: List<MailboxMsg>  # to send to counterpart chains
-  timer: TimerHandle
-  timeoutMs: uint64
-  nativeReady: bool                     # received NativeDecided(1)
-}
+    send_new_write_messages(resp.writtenMessages)
 
-# ===== Session start =====
-on_receive(StartCDCP{superblock, xTSequenceNumber, xTRequest, xTid} from SP):
-  ctx = new WSContext
-  ctx.state = INIT
-  ctx.superblock = superblock
-  ctx.xTid = xTid
-  ctx.xReq = xTRequest
-  ctx.txMain = extract_transactions(xTRequest, ctx.chainID)  # select the ER transaction
-  ctx.mailboxTxs = []
-  ctx.pendingMailboxMsgs = []
-  ctx.nativeReady = false
+    if resp.readMiss exists:
+        expectedReads.append(resp.readMiss)
+        consume_mailbox_and_retry()
+        return
 
-  # enter simulation
-  ctx.state = SIMULATING
-  ctx.timer = set_timer(xTid, ctx.timeoutMs)
-  WS_run_simulation(xTid)
+    if resp.writeMiss exists:
+        putOutbox.append(resp.writeMiss)
+        run_simulation()
+        return
+    
+    # Else -> success
+    state = WAIT_NATIVE_DECIDED
+    attempt_er_call()
 
+procedure send_new_write_messages(messages):
+    for msg in messages:
+        if msg not in writtenCache:
+            writtenCache.add(msg)
+            send_mailbox(msg.destChainID, msg)
 
-# ===== Simulation routine =====
-function WS_run_simulation(xTid):
-  if ctx.state != SIMULATING: return
+procedure on MailboxMessage(msg):
+    if state != SIMULATING:
+        return
+    pendingMailbox.append(msg)
+    consume_mailbox_and_retry()
 
-  sim = simulate_with_mailbox_tracer(ctx.mailboxTxs + [ctx.txMain], handlers)
+procedure consume_mailbox_and_retry():
+    consumed = false
+    for expected in expectedReads:
+        match = find_matching_message(expected, pendingMailbox)
+        if match exists:
+            remove(expectedReads, expected)
+            remove(pendingMailbox, match)
+            putInbox.append(match)
+            consumed = true
+    if consumed:
+        run_simulation()
 
-  if sim.success:
-    # Wait for NativeDecided
-    ctx.state = WAIT_NATIVE_DECIDED
-    if ctx.nativeReady:
-      ctx.state = SUBMIT_TO_ER
-      WS_submit_to_ER(xTid)
-    return
+procedure on NativeDecided(decision):
+    if nativeDecided is not None or state == DONE:
+        return
+    nativeDecided = decision
+    attempt_er_call()
 
-  if sim.failReason == WRITE_MISS:
+procedure attempt_er_call():
+    if state != WAIT_NATIVE_DECIDED or nativeDecided is None:
+        return
 
-    m = make_mailbox_msg_from_write(sim.writeCtx, ctx.xTid)
-    send_mailbox_to_counterparty(m)
+    if nativeDecided == 0:
+        state = DONE
+        return    # NSs already rejected
 
-    s = ExternalOutboxWrite{
-        destChainID: m.destChainID,
-        sender: m.sender,
-        receiver: m.receiver,
-        sessionId: m.sessionId,
-        label: m.label,
-        data: m.data
-    }
-    ctx.mailboxTxs.append(s)
+    state = WAIT_ER_RESPONSE
+    err = submit_safe_execute_to_ER(putInbox, putOutbox, txs)
+    if err:
+        send(SP, WSDecided(0))
+    else:
+        send(SP, WSDecided(1))
+    state = DONE
 
-    # Restart simulation after updating the list
-    return WS_run_simulation(xTid)
-
-  # Failure cases:
-  if sim.failReason == READ_MISS:
-    # Wait for mailbox message arrival from another sequencer
-    return
-
-  else if sim.failReason == OTHER:
-    # Irrecoverable local failure
-    cancel_timer(ctx.timer)
-    send(SP, WSDecided{ctx.superblock, ctx.xTid, false})
-    ctx.state = DONE
-    return
-
-
-# ===== Mailbox message arrival from counterpart chain (enables read) =====
-on_receive(Mailbox msg from counterpart, xTid):
-
-  if ctx.state == SIMULATING:
-    s = ExternalInboxRead{
-      srcChainID: msg.srcChainID,
-      sender: msg.sender,
-      receiver: msg.receiver,
-      sessionId: msg.sessionId,
-      label: msg.label,
-      data: msg.data
-    }
-    ctx.mailboxTxs.append(s)
-    WS_run_simulation(xTid)
-
-
-# ===== NativeDecided from SP =====
-on_receive(NativeDecided{superblock, xTid, Decision} from SP):
-  if superblock != ctx.superblock: return
-
-  if Decision == 0:
-    # Abort locally and don't include the txs
-    cancel_timer(ctx.timer)
-    ctx.mailboxTxs.clear()
-    ctx.state = DONE
-    return
-
-  # Decision == 1: NSs are willing; proceed only if our local sim was already successful
-  if ctx.state == WAIT_NATIVE_DECIDED:
-    ctx.nativeReady = true
-    ctx.state = SUBMIT_TO_ER
-    WS_submit_to_ER(xTid)
-  else:
-    # Mark readiness and let simulation finish
-    ctx.nativeReady = true
-
-
-# ===== After local success + NativeDecided(1): submit atomic tx to ER =====
-function WS_submit_to_ER(xTid):
-  if ctx.state != SUBMIT_TO_ER: return
-
-  cancel_timer(ctx.timer)
-
-  # Call ER with atomic tx
-  erRes = build_and_send_ER_atomic_tx(ctx)
-
-  if erRes.success:
-    # Rule 11: success
-    send(SP, WSDecided{ctx.superblock, ctx.xTid, 1})
-  else:
-    # Rule 10: failure
-    send(SP, WSDecided{ctx.superblock, ctx.xTid, 0})
-
-  ctx.state = DONE
-
-
-# ===== Timeout =====
-on_timer_fired(xTid):
-  if ctx.state in {SIMULATING, WAIT_NATIVE_DECIDED}:
-    send(SP, WSDecided{ctx.superblock, ctx.xTid, 0})
-    ctx.state = DONE
+procedure on_timeout():
+    if state in {SIMULATING, WAIT_NATIVE_DECIDED}:
+        send(SP, WSDecided(0))
+        state = DONE
 ```
 
-### Transitive Dependency & Sessions
+## Transitive Dependency & Sessions
 
 In its initial version, the protocol only supports one external rollup.
 
@@ -531,7 +431,7 @@ In future versions, many will be supported.
 Due to the settlement dependency, a proper session management system will be required not to create settlement deadlocks, that could allow double-spending and other attacks.
 
 
-## WS - ER Sync
+## WS—ER Sync
 
 For simulating transactions, the WS needs a snapshot of the ER's state, which influences the contents of any message written to other chains.
 Once the `safe_execute` tx is submitted to the ER, it will be re-executed with the ER's current state, and it will only succeed if the written messages are the same as the ones simulated (pre-populated in the ExternalMailbox).
