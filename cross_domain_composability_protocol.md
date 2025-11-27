@@ -25,7 +25,7 @@ To differentiate between types of rollups, we use the following terminology:
 
 ## System Model
 
-We system encompasses 5 main components:
+The system encompasses 5 main components:
 1. **User**: An entity that requests a cross-domain transaction execution.
 2. **Shared Publisher (SP)**: The coordinator of the network that leads the execution of the protocol.
 3. **Native Rollup Sequencers (NSs)**: Sequencers for the participating native rollups.
@@ -166,7 +166,7 @@ Similarly to the SCP protocol, the SP initiates the execution by sending a start
 Then, each NS runs **exactly** the protocol rules of the [SCP protocol](TODO). Namely:
 1. Once it receives the `StartCDCP` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
 2. Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
-3. Once a `mailbox.Write` operation is intercepted, it sends a `Mailbox` message to the couterparty chain sequencer (either the WS or another NS).
+3. Once a `mailbox.Write` operation is intercepted, it sends a `Mailbox` message to the counterparty chain sequencer (either the WS or another NS).
 4. Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
 5. Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox' transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
 6. In case the transaction simulation is successful, it stops the timer (as it no longer will be used) and sends a `Vote(1)` message to the SP, indicating its willingness to include the transaction.
@@ -181,21 +181,21 @@ The Shared Publisher (SP) runs a slightly modified version of the SCP protocol:
 4. Once a `WSDecided(b)` message is received from the WS, it sends a `Decided(b)` message indicating the result to the NSs, and terminates.
 
 Note that, from the above, the SP works as a middle layer between the NSs and WS.
-It indicates the viability results from the NSs to the WS, who is now allowed to communicate with the external rollup for including its transaction.
+It indicates the viability results from the NSs to the WS, who is then allowed to communicate with the external rollup for including its transaction.
 Once the WS receives a response, it indicates the result to the SP, who transmits the result back to the NSs.
 
 The Wrapped Sequencer (WS) has the following rules:
 1. Same as NS.
 2. Same as NS.
-3. Whenever a `stagedMailbox.Write` operation is intercepted and fails:
+3. Whenever a `externalMailbox.Write` operation is intercepted and fails:
   - It sends a `Mailbox` message to the counterparty chain sequencer.
-  - It creates a `stagedMailbox.putOutbox` transaction and adds it locally to the transaction list, placing it before the main transaction.
+  - It creates a `externalMailbox.putOutbox` transaction and adds it locally to the transaction list, placing it before the main transaction.
   - Then, it re-starts the transaction simulation going back to step 2.
 4. Same as NS.
 5. Same as NS.
 6. In case the transaction simulation is successful, it waits for a `NativeDecided` message from the SP.
 7. In case there's a timeout (before a `WSDecided` message has been sent) or if the transaction simulation fails but not due to a mailbox write or read error, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
-8. If a `NativeDecided(0)` message is received from the SP, it removes its transaction (and any created `stagedMailbox`) and terminates.
+8. If a `NativeDecided(0)` message is received from the SP, it removes its transaction (and any created `externalMailbox`) and terminates.
 9. If a `NativeDecided(1)` message is received from the SP and its local transaction simulation is successful, it stops the timer (as it no longer will be used) and sends a special transaction to the ER, which populates the mailbox and executes the transaction atomically.
 10. If the ER transaction fails, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
 11. If the ER transaction is successful, it sends a `WSDecided(1)` message to the SP, indicating success and terminates.
@@ -203,33 +203,66 @@ The Wrapped Sequencer (WS) has the following rules:
 The special atomic transaction to the ER, `safe_execute`, allows an atomic execution of the mailbox staging and the main transaction.
 It has the following pseudo-code:
 ```solidity
-function safe_execute(stagedInboxMsgs, stagedOutboxMsgs, mainTx) external {
-    // 1. Pre-populate the staged inbox messages
-    for (msg in stagedInboxMsgs) {
-        stagedMailbox.putInbox(msg...)
+function safe_execute(inboxMsgs, outboxMsgs, mainTx) external {
+    // 1. Pre-populate the inbox messages
+    for (msg in inboxMsgs) {
+        externalMailbox.putInbox(msg...)
     }
-    // 2. Pre-populate the staged outbox messages
-    for (msg in stagedOutboxMsgs) {
-        stagedMailbox.putOutbox(msg...)
+    // 2. Pre-populate the outbox messages
+    for (msg in outboxMsgs) {
+        externalMailbox.putOutbox(msg...)
     }
     // 3. Execute the main transaction
     call mainTx();
 }
 ```
 
-![cdcp](./images/cdcp.png)
+**Sequence diagram**
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant User
+    participant SP
+    participant NS
+    participant WS
+    participant ER
+
+    User->>SP: User op
+
+    SP->>NS: StartCDCP
+    NS->>WS: StartCDCP
+
+    Note right of WS:3.5) "write" trigger:
+    Note right of WS:i) send to destination NS
+    Note right of WS:ii) add externalMailbox.putOutbox on top and re-execute
+
+    WS->>NS: Mailbox Msgs
+
+    NS->>WS: Mailbox Msgs
+    Note right of WS:5) Add externalMailbox.putInbox on top and re-execute
+
+
+    NS->>SP: Vote
+
+    SP->>WS: NativeDecided
+
+    WS->>ER: Submit tx + msgs
+    ER->>WS: Inclusion confirmation (or rejection)
+
+    WS->>SP: WSDecided
+
+    SP->>NS: Decided
+```
 
 ### Messages
 
-Besides the messages already defined in the [SCP protocol](TODO), we have the following additional messages:
+Besides the messages already defined in the [SCP protocol](./synchronous_composability_protocol.md) 
+(`StartInstance`,`MailboxMessage`,`Vote`,`Decided`),
+we have the following additional messages:
 
 ```protobuf
-message StartCDCP {
-    uint64 SuperblockNumber = 1;
-    uint64 xTSequenceNumber = 2;
-    xTRequest xTRequest = 3;
-    bytes xTid = 4; // 32-byte SHA256 hash over xTRequest
-}
 message NativeDecided {
     uint64 SuperblockNumber = 1;
     bytes xTid = 2;
@@ -343,7 +376,7 @@ function simulate_with_mailbox_tracer(txList, handlers) -> SimResult
 # SimResult: { success: bool, failReason: enum{NONE, READ_MISS, WRITE_MISS, OTHER}, readContext?, writeContext? }
 
 # Driver that creates the final atomic ER transaction that:
-#  - pre-populates staged inbox/outbox
+#  - pre-populates inbox/outbox
 #  - executes the main transaction
 function build_and_send_ER_atomic_tx(ctx) -> ERResult
 
@@ -356,7 +389,7 @@ record WSContext {
   xReq: XTRequest
 
   txMain: Transaction                   # transaction for the external rollup
-  mailboxTxs: List<Transaction>         # Mailbox txs that are staged before txMain
+  mailboxTxs: List<Transaction>         # Mailbox txs that are populated (in/out) before txMain
   pendingMailboxMsgs: List<MailboxMsg>  # to send to counterpart chains
   timer: TimerHandle
   timeoutMs: uint64
@@ -400,7 +433,7 @@ function WS_run_simulation(xTid):
     m = make_mailbox_msg_from_write(sim.writeCtx, ctx.xTid)
     send_mailbox_to_counterparty(m)
 
-    s = StagedOutboxWrite{
+    s = ExternalOutboxWrite{
         destChainID: m.destChainID,
         sender: m.sender,
         receiver: m.receiver,
@@ -430,7 +463,7 @@ function WS_run_simulation(xTid):
 on_receive(Mailbox msg from counterpart, xTid):
 
   if ctx.state == SIMULATING:
-    s = StagedInboxRead{
+    s = ExternalInboxRead{
       srcChainID: msg.srcChainID,
       sender: msg.sender,
       receiver: msg.receiver,
@@ -503,86 +536,9 @@ For simulating transactions, the WS needs a snapshot of the ER's state, which in
 Once the `safe_execute` tx is submitted to the ER, it will be re-executed with the ER's current state, and it will only succeed if the written messages are the same as the ones simulated (pre-populated in the ExternalMailbox).
 Therefore, to maximize the probability of success, the WS should have the most recent state possible.
 
-For that, the WS will be constantly syncing the ER's state.
 However, note that the state can't be updated during the protocol's execution, as it could change the simulation results (previously written messages).
 Thus, the protocol initiation should also lock the chain's state being used.
 
-**Design pattern**<br>
-- The WS keeps **one active global snapshot** (read-only) + zero or one **staging snapshot**.
-- CDCP instances acquire a read lease on the active snapshot at start, and release it at end.
-- A background sync loop fetches the newest ER state continuously, but updates `active <- staging` only when there's no active readers (leases).
-
-This represents a reader/writer with versioned snapshots setup, which doesn't require the complexity of a RWLock as sessions never need to write, i.e. only the writer swaps when there are no active readers.
-
-```py
-# ===== ER State Snapshot =====
-record ERStateSnapshot {
-  uint64  height
-  bytes32 block_hash
-  State   state           # abstract state representation
-}
-
-# ===== Snapshot Store with Leasing =====
-record SnapshotStore {
-  ERStateSnapshot active              # globally visible snapshot
-  ERStateSnapshot? staging            # newest fetched, not yet active
-  bool   read_lease                   # true if any CDCP session is using active
-  bool   swap_pending                 # true if staging exists and waiting to swap
-  Mutex  mu
-  time   last_swap_time
-}
-
-function WS_BackgroundSyncLoop(store: SnapshotStore, erClient: ERClient, poll_interval_ms):
-  while true:
-    # Fetch latest ER view
-    latest = fetch_latest_er_snapshot(erClient)
-
-    lock(store.mu):
-      # If this is not fresher or same block, skip
-      if store.staging != null and
-            (latest.height < store.staging.height or
-            (latest.height == store.staging.height and latest.block_hash == store.staging.block_hash)
-            ):
-        unlock(store.mu)
-        sleep(poll_interval_ms)
-        continue
-
-      # Put into staging
-      store.staging = latest
-      store.swap_pending = true
-
-      # If there are no readers, swap immediately
-      if store.read_lease == false:
-        store.active = store.staging
-        store.staging = null
-        store.swap_pending = false
-        store.last_swap_time = now()
-
-      unlock(store.mu)
-
-    sleep(poll_interval_ms)
-
-# Acquire a read-only snapshot lease for a new CDCP session.
-# Returns a frozen pointer/copy to ERStateSnapshot the session must use throughout.
-function acquire_snapshot_lease(store: SnapshotStore) -> ERStateSnapshot?:
-  lock(store.mu):
-    store.read_lease = true
-    snapshot = store.active
-  unlock(store.mu)
-  return snapshot
-
-# Release the lease when the session finishes.
-function release_snapshot_lease(store: SnapshotStore):
-  lock(store.mu):
-    store.read_lease = false
-    if store.read_lease == false and store.swap_pending:
-      # Safe swap now
-      store.active = store.staging
-      store.staging = null
-      store.swap_pending = false
-      store.last_swap_time = now()
-  unlock(store.mu)
-```
 
 ## Settlement
 
@@ -590,7 +546,7 @@ Following the SBCP (v2), at the end of the superblock period, sequencers submit 
 commiting to their final state and to the associated mailbox roots.
 With an external rollup, the mailbox roots from natives should also be compared to the roots stores in the ER.
 
-Therefore, the WS should provide the SP with the ER's staged mailbox roots at settlement time.
+Therefore, the WS should provide the SP with the ER's external mailbox roots at settlement time.
 While the WS's proof does not need to attest to the ER's correct state execution, it should
 at least prove that there's a certain mailbox state associated with a certain ER block hash and number.
 
