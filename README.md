@@ -29,6 +29,10 @@ explains the settlement pipeline of Compose,
 picturing the recursive ZK programs architecture which
 outputs a single ZK proof about the state progress of the entire chain.
 
+## 📝 Minimal Spec Lib Implementation
+
+This repo contains a [minimal implementation](./compose/README.md) of the core logic of the proposed protocols.
+
 ## ⚙️ Rollup Integration
 
 Compose’s proposed modules do not fully specify every layer of a rollup.
