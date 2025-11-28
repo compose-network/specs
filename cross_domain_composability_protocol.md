@@ -586,9 +586,9 @@ at least prove that there's a certain mailbox state associated with a certain ER
 
 For that, the WS zk program input is structured as:
 ```rust
-pub struct WSInput {
+pub struct Input {
   WitnessData, // With similar data as in the ZK Range program input
-  pub post_state_root: B256,
+  pub state_root: B256,
   
   // Inbox
   pub mailbox_inbox_chains_len: GetProofOutput
@@ -615,11 +615,11 @@ pub struct StorageProof {
 }
 ```
 
-It consists of a `post_state_root` block reference and several [`eth_getProof`](https://www.quicknode.com/docs/ethereum/eth_getProof)
+It consists of a `state_root` block reference and several [`eth_getProof`](https://www.quicknode.com/docs/ethereum/eth_getProof)
 outputs for fetching the mailbox state described in the `ExternalMailbox` contract.
 
 More precisely:
-- The `post_state_root` field represents the last ER's block state root associated to the superblock period.
+- The `state_root` field represents the last ER's block state root associated to the superblock period.
 - The `mailbox_inbox_chains_len` represents the output of calling `eth_getProof` for the slot `0x0`, which stores the length of the `chainIDsInbox` array (`len_inbox`).
 - Similarly, `mailbox_outbox_chains_len` represents the call at slot `0x1` for the length of the `chainIDsOutbox` array (`len_outbox`).
 - Given these lengths, the WS can fill `mailbox_inbox_chains` which represents a call for `len_inbox` items with keys `key(i) = base + i`, where `base = keccak256(0x0)`.
@@ -630,8 +630,8 @@ More precisely:
 
 The program will produce the following output, committing to the mailbox state root, as defined in the [settlement layer spec](./settlement_layer.md).
 ```rust
-pub struct WSOutput {
-  pub post_state_root:  B256,
+pub struct Output {
+  pub state_root:  B256,
   pub mailbox_contract: B256,
   pub mailbox_root:     B256,
 }
@@ -641,20 +641,20 @@ Once a proof is generated, the WS submits it to the SP along with the list of ch
 
 **WS ZK Program Pseudocode**
 ```py
-procedure WS_ZK_Program(input: WSInput) -> WSOutput:
-    // Confirm post_state_root exists in the ER contract
-    ensure_l2_block_exists(input.witness_data, input.post_state_root)
+procedure WS_ZK_Program(input: Input) -> Output:
+    // Confirm state_root exists in the ER contract
+    ensure_l2_block_exists(input.witness_data, input.state_root)
     
     // Verify that mailbox is consistent and get it
     mailbox_addr = verify_consistency_and_return_mailbox_address(input)
     
     // Verify proofs
-    verify_get_proof(input.mailbox_inbox_chains_len, input.post_state_root)
-    verify_get_proof(input.mailbox_inbox_chains, input.post_state_root)
-    verify_get_proof(input.mailbox_inbox_roots, input.post_state_root)
-    verify_get_proof(input.mailbox_outbox_chains_len, input.post_state_root)
-    verify_get_proof(input.mailbox_outbox_chains, input.post_state_root)
-    verify_get_proof(input.mailbox_outbox_roots, input.post_state_root)
+    verify_get_proof(input.mailbox_inbox_chains_len, input.state_root)
+    verify_get_proof(input.mailbox_inbox_chains, input.state_root)
+    verify_get_proof(input.mailbox_inbox_roots, input.state_root)
+    verify_get_proof(input.mailbox_outbox_chains_len, input.state_root)
+    verify_get_proof(input.mailbox_outbox_chains, input.state_root)
+    verify_get_proof(input.mailbox_outbox_roots, input.state_root)
     
     // Reconstruct mailbox root
     inbox_len = input.mailbox_inbox_chains_len.storageProof[0].value
@@ -671,8 +671,8 @@ procedure WS_ZK_Program(input: WSInput) -> WSOutput:
     
     mailbox_root = compute_mailbox_root(inbox_chains, inbox_roots, outbox_chains, outbox_roots)
     
-    commit(WSOutput{
-    post_state_root: input.post_state_root,
+    commit(Output{
+    state_root: input.state_root,
     mailbox_contract: mailbox_addr,
     mailbox_root: mailbox_root
     })
@@ -681,8 +681,10 @@ procedure WS_ZK_Program(input: WSInput) -> WSOutput:
 
 ### SP Program Modifications
 
-The SP zk program should be adjusted to accept the WSOutput as an additional input.
+The SP zk program should be adjusted to accept the above program's output
+as well as a list of mailbox roots provided by the WS (exactly as other NSs do)
+as additional inputs.
 The SP then needs to:
-- Verify the proof for `WSOutput`.
-- Verify that `WSOutput.mailbox_contract` matches the expected ExternalMailbox address for the WS.
-- As done for other rollups, verify that the `WSOutput.mailbox_root` is correct considering list of mailbox roots, and match these roots against native ones. 
+- Verify the proof for `Output`.
+- Verify that `Output.mailbox_contract` matches the expected ExternalMailbox address for the WS.
+- As done for other rollups, verify that the `Output.mailbox_root` is correct considering list of mailbox roots, and match these roots against native ones. 
