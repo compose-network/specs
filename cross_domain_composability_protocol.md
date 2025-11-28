@@ -7,12 +7,16 @@ The atomicity property refers to the guarantee that either both rollups successf
 
 - [Native vs. External Rollups](#native-vs-external-rollups)
 - [System Model](#system-model)
-- [Mailbox](#external-mailbox)
+- [Informal Protocol Intuition](#informal-protocol-intuition)
+- [External Mailbox](#external-mailbox)
 - [Protocol](#protocol)
+  - [Native Sequencer (NS)](#native-sequencer-ns)
+  - [Shared Publisher (SP)](#shared-publisher-sp)
+  - [Wrapped Sequencer (WS)](#wrapped-sequencer-ws)
   - [Messages](#messages)
-  - [Pseudo-code](#pseudo-code)
+  - [Pseudocode](#pseudocode)
+  - [WS—ER Sync](#wser-sync)
 - [Transitive Dependency & Sessions](#transitive-dependency--sessions)
-- [WS—ER Sync](#wser-sync)
 - [Settlement](#settlement)
   - [WS ZK Program](#ws-zk-program)
   - [SP Program Modifications](#sp-program-modifications)
@@ -33,10 +37,61 @@ The system encompasses 5 main components:
 5. **Wrapped Sequencer (WS)**: An entity that represents the participating external rollup sequencer in the Compose network, having access to the state and execution results of the external rollup.
 
 The SP, NSs, and WS are part of the Compose network and are expected to have direct communication channels between them.
-It's assumed that the user sends their request to SP, who will have the responsibility to initiate the protocol execution.
+It's assumed that a user request is eventually delivered to the SP who will have the responsibility to initiate the protocol execution.
 The WS is expected to have a communication channel with the ER.
 
 For now, no byzantine faults are considered in the system.
+
+## Informal Protocol Intuition
+
+The WS will behave as it's the actual sequencer of the ER.
+It will receive mailbox messages from other NSs, simulate its transactions,
+produce outbox mailbox messages, and send them to the NSs. 
+However, once the simulation phase is done,
+the WS will need to send all this information to the ER, for the transaction
+to be really included in a block.
+
+Here is the delicate part of the protocol. 
+We can't control the ER decision to include or not a valid transaction.
+Still, the ER execution must match exactly the WS's one,
+otherwise NSs would have executed on top of different messages
+and would also produce different messages.
+More concretely:
+1. The ER must "receive" the same inbox messages the WS received.
+2. The ER must produce the same outbox messages the WS produced.
+
+Both (1) and (2) are solved in the same manner:
+the WS provides all such information to the ER
+who enforces a match with its execution.
+Thinking in solidity and EVM logic,
+in order to control the inclusion of the transaction,
+we can control its validity
+by binding the mailbox data to the WS's simulation.
+This will be accomplished by the external mailbox,
+which has an extra "write pre-population" feature that enforces
+the ER's generated messages to match the WS's ones.
+
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant SP/NSs
+    participant WS
+    participant ER
+
+    Note left of WS: simulation phase
+    WS->>SP/NSs: Outbox Msgs
+    SP/NSs->>WS: Inbox Msgs + Everyone can proceed
+    
+    WS->>ER: Tx + inbox and outbox msgs
+    
+    Note right of ER: Use the provided inbox msgs
+    Note right of ER: Validity depend on: written msgs == WS's outbox msgs
+    
+    ER->>WS: Inclusion decision
+```
+
 
 ## External Mailbox
 
@@ -47,7 +102,6 @@ In the `ExternalMailbox`, all messages are pre-populated by the WS:
 - `read` is similar to the standard `Mailbox`, in which it's confirmed that the message exists and its data is returned.
 - `write` is modified to ensure that the written message was pre-populated by the WS.
 
-We will see how this pre-population works in the protocol description.
 Next, we present the `ExternalMailbox` contract.
 
 ```text
@@ -161,10 +215,14 @@ CONTRACT ExternalMailbox:
 
 ## Protocol
 
-Similarly to the SCP protocol, the SP initiates the execution by sending a start message, `StartCDCP`, to NSs and WS.
+Similarly to the SCP protocol, the SP initiates the execution by sending a start message, `StartInstance`, to NSs and WS.
+
+---
+
+### Native Sequencer (NS)
 
 Then, each NS runs **exactly** the protocol rules of the [SCP protocol](./synchronous_composability_protocol.md). Namely:
-1. Once it receives the `StartCDCP` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
+1. Once it receives the `StartInstance` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
 2. Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
 3. Once a `mailbox.Write` operation is intercepted, it sends a `Mailbox` message to the counterparty chain sequencer (either the WS or another NS).
 4. Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
@@ -174,8 +232,29 @@ Then, each NS runs **exactly** the protocol rules of the [SCP protocol](./synchr
 8. In case a `Decided(1)` message is received from the SP, it adds all `mailbox.putInbox' transactions created and the main transaction to the block, and terminates.
 9. In case a `Decided(0)` message is received from the SP, it removes all `mailbox.putInbox' transactions created and the main transaction from the block, reverting to the previous state, and terminates.
 
+**Sequence Diagram - NS View**
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant SP
+    participant NS
+    participant WS/Other NSs
+
+    SP->>NS: StartInstance
+    Note right of NS: Exchange Mailbox Mesages
+    NS->>WS/Other NSs: Mailbox Message
+    WS/Other NSs->>NS: Mailbox Message
+    
+    NS->>SP: Vote
+    SP->>NS: Decision
+```
+
+---
+### Shared Publisher (SP)
+
 The Shared Publisher (SP) runs a slightly modified version of the SCP protocol:
-1. It sends a `StartCDCP` message to the appropriate sequencers, starts a timer and waits for NSs' `Vote` messages.
+1. It sends a `StartInstance` message to the appropriate sequencers, starts a timer, and waits for NSs' `Vote` messages.
 2. If a timeout occurs or if a `Vote(0)` message is received (indicates a failure), it sends a `Decided(0)` message to the NSs and a `NativeDecided(0)` message to the WS, and terminates.
 3. If it receives a `Vote(1)` message from all NSs, it stops the timer (as it not longer will be used) and sends a `NativeDecided(1)` message to the WS, indicating that the NSs are willing to proceed.
 4. Once a `WSDecided(b)` message is received from the WS, it sends a `Decided(b)` message indicating the result to the NSs, and terminates.
@@ -184,15 +263,38 @@ Note that, from the above, the SP works as a middle layer between the NSs and WS
 It indicates the viability results from the NSs to the WS, who is then allowed to communicate with the external rollup for including its transaction.
 Once the WS receives a response, it indicates the result to the SP, who transmits the result back to the NSs.
 
+**Sequence Diagram - SP View**
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant NSs
+    participant SP
+    participant WS
+
+    par Start
+    SP->>NSs: StartInstance
+    SP->>WS: StartInstance
+    end
+    NSs->>SP: Votes
+    SP->>WS: NativeDecided
+    WS->>SP: WSDecided
+    SP->>NSs: Decided
+```
+
+---
+
+### Wrapped Sequencer (WS)
+
 The Wrapped Sequencer (WS) has the following rules:
-1. Same as NS.
-2. Same as NS.
+1. (Same as NS) Once it receives the `StartInstance` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
+2. (Same as NS) Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
 3. Whenever a `externalMailbox.Write` operation is intercepted and fails:
   - It sends a `Mailbox` message to the counterparty chain sequencer.
   - It creates a `externalMailbox.putOutbox` transaction and adds it locally to the transaction list, placing it before the main transaction.
   - Then, it re-starts the transaction simulation going back to step 2.
-4. Same as NS.
-5. Same as NS.
+4. (Same as NS) Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
+5. (Same as NS) Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox' transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
 6. In case the transaction simulation is successful, it waits for a `NativeDecided` message from the SP.
 7. In case there's a timeout (before a `WSDecided` message has been sent) or if the transaction simulation fails but not due to a mailbox write or read error, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
 8. If a `NativeDecided(0)` message is received from the SP, it removes its transaction (and any created `externalMailbox`) and terminates.
@@ -200,7 +302,7 @@ The Wrapped Sequencer (WS) has the following rules:
 10. If the ER transaction fails, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
 11. If the ER transaction is successful, it sends a `WSDecided(1)` message to the SP, indicating success and terminates.
 
-The special atomic transaction to the ER, `safe_execute`, allows an atomic execution of the mailbox staging and the main transaction.
+The special transaction to the ER, `safe_execute`, allows an atomic execution of the mailbox staging and the main transaction.
 It has the following pseudo-code:
 ```text
 FUNCTION safe_execute(inboxMsgs, outboxMsgs, txs):
@@ -218,7 +320,7 @@ FUNCTION safe_execute(inboxMsgs, outboxMsgs, txs):
         CALL tx()
 ```
 
-**Sequence diagram**
+**Full Sequence Diagram**
 
 ```mermaid
 sequenceDiagram
@@ -232,8 +334,8 @@ sequenceDiagram
 
     User->>SP: User op
 
-    SP->>NS: StartCDCP
-    NS->>WS: StartCDCP
+    SP->>NS: StartInstance
+    NS->>WS: StartInstance
 
     Note right of WS:3.5) "write" trigger:
     Note right of WS:i) send to destination NS
@@ -257,6 +359,8 @@ sequenceDiagram
     SP->>NS: Decided
 ```
 
+---
+
 ### Messages
 
 Besides the messages already defined in the [SCP protocol](./synchronous_composability_protocol.md) 
@@ -276,7 +380,7 @@ message WSDecided {
 }
 ```
 
-### Pseudo-code
+### Pseudocode
 
 **CDCP Algorithm for the Shared Publisher**
 
@@ -423,23 +527,23 @@ procedure on_timeout():
         state = DONE
 ```
 
-## Transitive Dependency & Sessions
+---
 
-In its initial version, the protocol only supports one external rollup.
-
-In future versions, many will be supported.
-Due to the settlement dependency, a proper session management system will be required not to create settlement deadlocks, that could allow double-spending and other attacks.
-
-
-## WS—ER Sync
+### WS—ER Sync
 
 For simulating transactions, the WS needs a snapshot of the ER's state, which influences the contents of any message written to other chains.
 Once the `safe_execute` tx is submitted to the ER, it will be re-executed with the ER's current state, and it will only succeed if the written messages are the same as the ones simulated (pre-populated in the ExternalMailbox).
 Therefore, to maximize the probability of success, the WS should have the most recent state possible.
 
 However, note that the state can't be updated during the protocol's execution, as it could change the simulation results (previously written messages).
-Thus, the protocol initiation should also lock the chain's state being used.
+Thus, the protocol initiation should also lock the chain's state being used (as shown in the pseudocode above).
 
+## Transitive Dependency & Sessions
+
+In its initial version, the protocol only supports one external rollup.
+
+In future versions, many will be supported.
+Due to the settlement dependency, a proper session management system will be required not to create settlement deadlocks, that could allow double-spending and other attacks.
 
 ## Settlement
 
