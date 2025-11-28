@@ -242,7 +242,7 @@ sequenceDiagram
     participant WS/Other NSs
 
     SP->>NS: StartInstance
-    Note right of NS: Exchange Mailbox Mesages
+    Note over NS,WS/Other NSs: Exchange Mailbox Mesages
     NS->>WS/Other NSs: Mailbox Message
     WS/Other NSs->>NS: Mailbox Message
     
@@ -537,6 +537,33 @@ Therefore, to maximize the probability of success, the WS should have the most r
 
 However, note that the state can't be updated during the protocol's execution, as it could change the simulation results (previously written messages).
 Thus, the protocol initiation should also lock the chain's state being used (as shown in the pseudocode above).
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant ER
+    participant WS
+    participant SP
+
+    loop Continuous Sync (idle)
+        WS->>ER: Fetch latest state snapshot
+        ER-->>WS: Current state root
+    end
+
+    SP->>WS: StartInstance
+    Note over WS: Lock snapshot = last fetched state
+    Note over WS,ER: No more fetches until instance finishes
+
+    Note over WS,SP: Instance decided (by NativeDecided or WSDecided)
+
+    Note over WS: Resume syncing
+
+    loop Continuous Sync (idle)
+        WS->>ER: Fetch latest state snapshot
+        ER-->>WS: Current state root
+    end
+```
 
 ## Transitive Dependency & Sessions
 
