@@ -305,7 +305,7 @@ The Wrapped Sequencer (WS) has the following rules:
 The special transaction to the ER, `safe_execute`, allows an atomic execution of the mailbox staging and the main transaction.
 It has the following pseudo-code:
 ```text
-FUNCTION safe_execute(inboxMsgs, outboxMsgs, txs):
+FUNCTION safe_execute(inboxMsgs, outboxMsgs, txs) onlyInvocableByWS:
 
     # 1. Pre-populate inbox messages in ExternalMailbox
     FOR each msg IN inboxMsgs:
