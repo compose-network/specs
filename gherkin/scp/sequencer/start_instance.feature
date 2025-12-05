@@ -1,4 +1,4 @@
-Feature: Sequencer
+Feature: Sequencer Start Instance
   For a sequencer, an instance starts when it receives a StartInstance message from the SP.
   On the instance startup, the sequencer should start a timer for it, and filter the transactions
   that belong to its own chain for simulation.
@@ -10,6 +10,7 @@ Feature: Sequencer
     Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
 
+  @start-instance
   Scenario: Filters local transactions and starts a timer
     When sequencer "A" receives StartInstance:
       """
@@ -22,8 +23,9 @@ Feature: Sequencer
       """
     Then sequencer "A" should only consider transactions "[tx1_1,tx1_2]" for simulation
     And a timer for instance "0x1" should start
-    And a simulations for transactions "[tx1_1,tx1_2]" should start
+    And simulations for transactions "[tx1_1,tx1_2]" should start
 
+  @start-instance
   Scenario: Rejects StartInstance with no local transactions
     When sequencer "A" receives StartInstance:
       """

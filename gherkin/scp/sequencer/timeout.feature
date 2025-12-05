@@ -1,5 +1,5 @@
-Feature: Sequencer
-  In case there is the timeout is reached, the sequencer should:
+Feature: Sequencer Timeout
+  If the timeout is reached, the sequencer should:
   - vote false in case it hasn't voted yet, marking the instance as rejected
   - ignore the timeout in case it has already voted
 
@@ -7,6 +7,7 @@ Feature: Sequencer
     Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
 
+  @timeout
   Scenario: Rejects instance when timer expires before voting
     Given sequencer "A" receives StartInstance:
       """
@@ -25,6 +26,7 @@ Feature: Sequencer
       | vote        | false |
     And sequencer "A" should mark the instance "0x1" as rejected
 
+  @timeout
   Scenario Outline: Ignores timer expiry after voting
     Given sequencer "A" receives StartInstance:
       """

@@ -1,4 +1,4 @@
-Feature: Sequencer
+Feature: Sequencer Simulation
   After the startup, the sequencer should immediately start the simulation process.
   The simulation should return a success or an error, as well as the written mailbox messages.
   Any new written mailbox message should be forwarded to the destination sequencer.
@@ -15,7 +15,7 @@ Feature: Sequencer
     Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
 
-  @simulation-result
+  @simulation
   Scenario Outline: Votes according to simulation outcome
     Given sequencer "A" receives StartInstance:
       """
@@ -38,7 +38,7 @@ Feature: Sequencer
       | returns success                         | true  |
       | returns an error other than "Read miss" | false |
 
-  @simulation-result
+  @simulation @mailbox
   Scenario: Records expected mailbox message after read miss
     Given sequencer "A" receives StartInstance:
       """
@@ -59,7 +59,7 @@ Feature: Sequencer
       | label                | MSG   |
     Then sequencer "A" should record that mailbox message as expected for instance "0x1"
 
-  @simulation-result
+  @simulation @mailbox
   Scenario: Sends written mailbox message to the destination sequencer
     Given sequencer "A" receives StartInstance:
       """
@@ -81,7 +81,7 @@ Feature: Sequencer
       | data              | [0x01,0x02] |
     Then sequencer "A" should forward that MailboxMessage to sequencer "B" with instance ID "0x1"
 
-  @mailbox-message
+  @simulation @mailbox
   Scenario Outline: Handles inbound mailbox messages based on expectation
     Given sequencer "A" receives StartInstance:
       """
@@ -105,6 +105,6 @@ Feature: Sequencer
     And <simulation_effect>
 
     Examples:
-      | expected_state   | storage_result                                                                                  | simulation_effect                                |
-      | has not stored   | the message is appended to the pending mailbox queue for instance "0x1"                         | sequencer "A" should not start a new simulation  |
-      | has already stored | the message is makred for inbox and a mailbox.putInbox transaction is inserted before others | sequencer "A" should start a new simulation      |
+      | expected_state     | storage_result                                                                                                 | simulation_effect                               |
+      | has not stored     | the message is appended to the pending mailbox queue for instance "0x1"                                      | sequencer "A" should not start a new simulation |
+      | has already stored | the message is removed from the expected and pending queues, added to the inbox set, and a mailbox.putinbox transaction is added for it | sequencer "A" should start a new simulation     |
