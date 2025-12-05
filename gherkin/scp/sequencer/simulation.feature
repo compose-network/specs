@@ -82,6 +82,47 @@ Feature: Sequencer Simulation
     Then sequencer "A" should forward that MailboxMessage to sequencer "B" with instance ID "0x1"
 
   @simulation @mailbox
+  Scenario: Sends multiple written mailbox messages to the destination sequencer
+    Given sequencer "A" receives StartInstance:
+      """
+      instance_id: 0x1
+      period_id: 3
+      sequence_number: 9
+      xtrequest:
+        1: [tx1]
+        2: [tx2]
+      """
+    When the execution engine simulates "tx1" and writes the following mailbox messages:
+      | source_chain | destination_chain | source | receiver | session_id | label     | data        |
+      | 1            | 2                 | 0xaaa  | 0xbbb    | 0x777      | TRANSFER  | [0x01,0x02] |
+      | 1            | 2                 | 0xccc  | 0xddd    | 0x888      | NOTE      | [0x03]      |
+    Then sequencer "A" should forward the mailbox messages to sequencer "B" with instance ID "0x1"
+
+  @simulation @mailbox
+  Scenario: Does not resend a mailbox message that was already forwarded
+    Given sequencer "A" receives StartInstance:
+      """
+      instance_id: 0x1
+      period_id: 3
+      sequence_number: 9
+      xtrequest:
+        1: [tx1]
+        2: [tx2]
+      """
+    And sequencer "A" has already forwarded a mailbox message with:
+      | field             | value      |
+      | source_chain      | 1          |
+      | destination_chain | 2          |
+      | source            | 0xaaa      |
+      | receiver          | 0xbbb      |
+      | session_id        | 0x777      |
+      | label             | TRANSFER   |
+      | data              | [0x01,0x02] |
+      | instance_id       | 0x1        |
+    When the execution engine simulates "tx1" and writes the same mailbox message payload again
+    Then no additional MailboxMessage should be forwarded
+
+  @simulation @mailbox
   Scenario Outline: Handles inbound mailbox messages based on expectation
     Given sequencer "A" receives StartInstance:
       """
@@ -107,4 +148,4 @@ Feature: Sequencer Simulation
     Examples:
       | expected_state     | storage_result                                                                                                 | simulation_effect                               |
       | has not stored     | the message is appended to the pending mailbox queue for instance "0x1"                                      | sequencer "A" should not start a new simulation |
-      | has already stored | the message is removed from the expected and pending queues, added to the inbox set, and a mailbox.putinbox transaction is added for it | sequencer "A" should start a new simulation     |
+      | has already stored | the message is removed from the expected set and pending queue, then inserted into the inbox and a mailbox.putInbox transaction is added | sequencer "A" should start a new simulation     |
