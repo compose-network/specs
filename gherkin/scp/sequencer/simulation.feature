@@ -15,7 +15,7 @@ Feature: Sequencer Simulation
     Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
 
-  @simulation
+  @sequencer @scp @simulation
   Scenario Outline: Votes according to simulation outcome
     Given sequencer "A" receives StartInstance:
       """
@@ -38,7 +38,7 @@ Feature: Sequencer Simulation
       | returns success                         | true  |
       | returns an error other than "Read miss" | false |
 
-  @simulation @mailbox
+  @sequencer @scp @simulation @mailbox
   Scenario: Records expected mailbox message after read miss
     Given sequencer "A" receives StartInstance:
       """
@@ -59,7 +59,7 @@ Feature: Sequencer Simulation
       | label                | MSG   |
     Then sequencer "A" should record that mailbox message as expected for instance "0x1"
 
-  @simulation @mailbox
+  @sequencer @scp @simulation @mailbox
   Scenario: Sends written mailbox message to the destination sequencer
     Given sequencer "A" receives StartInstance:
       """
@@ -81,7 +81,7 @@ Feature: Sequencer Simulation
       | data              | [0x01,0x02] |
     Then sequencer "A" should forward that MailboxMessage to sequencer "B" with instance ID "0x1"
 
-  @simulation @mailbox
+  @sequencer @scp @simulation @mailbox
   Scenario: Sends multiple written mailbox messages to the destination sequencer
     Given sequencer "A" receives StartInstance:
       """
@@ -98,7 +98,7 @@ Feature: Sequencer Simulation
       | 1            | 2                 | 0xccc  | 0xddd    | 0x888      | NOTE      | [0x03]      |
     Then sequencer "A" should forward the mailbox messages to sequencer "B" with instance ID "0x1"
 
-  @simulation @mailbox
+  @sequencer @scp @simulation @mailbox
   Scenario: Does not resend a mailbox message that was already forwarded
     Given sequencer "A" receives StartInstance:
       """
@@ -122,7 +122,7 @@ Feature: Sequencer Simulation
     When the execution engine simulates "tx1" and writes the same mailbox message payload again
     Then no additional MailboxMessage should be forwarded
 
-  @simulation @mailbox
+  @sequencer @scp @simulation @mailbox
   Scenario Outline: Handles inbound mailbox messages based on expectation
     Given sequencer "A" receives StartInstance:
       """

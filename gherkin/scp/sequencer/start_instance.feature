@@ -10,7 +10,7 @@ Feature: Sequencer Start Instance
     Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
 
-  @start-instance
+  @sequencer @scp @start-instance
   Scenario: Filters local transactions and starts a timer
     When sequencer "A" receives StartInstance:
       """
@@ -25,7 +25,7 @@ Feature: Sequencer Start Instance
     And a timer for instance "0x1" should start
     And simulations for transactions "[tx1_1,tx1_2]" should start
 
-  @start-instance
+  @sequencer @scp @start-instance
   Scenario: Rejects StartInstance with no local transactions
     When sequencer "A" receives StartInstance:
       """

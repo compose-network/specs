@@ -11,7 +11,7 @@ Feature: Sequencer Decision
     Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
 
-  @decision
+  @sequencer @scp @decision
   Scenario: Rejects instance upon simulation failure
     Given sequencer "A" receives StartInstance:
       """
@@ -30,7 +30,7 @@ Feature: Sequencer Decision
       | vote        | false |
     Then sequencer "A" should mark the instance "0x1" as rejected
 
-  @decision
+  @sequencer @scp @decision
   Scenario: Rejects instance when decision is false
     Given sequencer "A" receives StartInstance:
       """
@@ -44,7 +44,7 @@ Feature: Sequencer Decision
     When sequencer "A" receives Decided for instance "0x1" with decision "false"
     Then sequencer "A" should mark the instance "0x1" as rejected
 
-  @decision
+  @sequencer @scp @decision
   Scenario: Errors when decision true arrives without a prior vote
     Given sequencer "A" receives StartInstance:
       """
@@ -62,7 +62,7 @@ Feature: Sequencer Decision
       decision true but no vote sent is an impossible state
       """
 
-  @decision
+  @sequencer @scp @decision
   Scenario: Errors when decision true contradicts a prior false vote
     Given sequencer "A" receives StartInstance:
       """
@@ -84,7 +84,7 @@ Feature: Sequencer Decision
       decision true but previous vote was false is an impossible state
       """
 
-  @decision
+  @sequencer @scp @decision
   Scenario: Finalizes instance when decision is received from SP
     Given sequencer "A" receives StartInstance:
       """
@@ -108,7 +108,7 @@ Feature: Sequencer Decision
       | true     | accepted  |
       | false    | rejected  |
 
-  @decision
+  @sequencer @scp @decision
   Scenario: Raises error when a decided instance receives a second decision
     Given sequencer "A" receives StartInstance:
       """

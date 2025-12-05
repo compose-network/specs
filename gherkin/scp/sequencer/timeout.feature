@@ -7,7 +7,7 @@ Feature: Sequencer Timeout
     Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
 
-  @timeout
+  @sequencer @scp @timeout
   Scenario: Rejects instance when timer expires before voting
     Given sequencer "A" receives StartInstance:
       """
@@ -26,7 +26,7 @@ Feature: Sequencer Timeout
       | vote        | false |
     And sequencer "A" should mark the instance "0x1" as rejected
 
-  @timeout
+  @sequencer @scp @timeout
   Scenario Outline: Ignores timer expiry after voting
     Given sequencer "A" receives StartInstance:
       """
