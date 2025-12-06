@@ -39,15 +39,20 @@ Feature: Sequencer Instance Management
 
 
   @sequencer @sbcp @instances
-  Scenario: Old sequence number results in rejection
+  Scenario Outline: Old or repeated sequence numbers result in rejection
     Given the sequencer "A" has an open block tagged with period "20"
-    And the last accepted sequence number for period "20" is "3"
+    And the last accepted sequence number for period "20" is "<last_sequence>"
     When the sequencer "A" receives StartInstance for:
       | field           | value |
       | instance_id     | 0x1   |
       | period_id       | 20    |
-      | sequence_number | 2     |
+      | sequence_number | <incoming_sequence> |
     Then the sequencer "A" should reject the instance by sending a vote "false" to the SP
+
+    Examples:
+      | last_sequence | incoming_sequence |
+      | 3             | 2                 |
+      | 5             | 5                 |
 
   @sequencer @sbcp @instances
   Scenario: Ongoing instance makes the sequencer reject new StartInstance requests
@@ -70,7 +75,7 @@ Feature: Sequencer Instance Management
       | instance_id     | 0x1   |
       | period_id       | 20    |
       | sequence_number | 4     |
-    Then the sequencer "A" should start the instance, register an snapshot of its state root, and lock local transactions
+    Then the sequencer "A" should start the instance, register a snapshot of its state root, and lock local transactions
 
 
   @sequencer @sbcp @instances
@@ -79,7 +84,7 @@ Feature: Sequencer Instance Management
     And the sequencer "A" has an active instance "0x1"
     When the sequencer "A" decides instance "0x1"
     Then the sequencer "A" should unlock and process local transactions
-    And the sequencer "A" has no active instance
+    And the sequencer "A" should have no active instance
 
 
   @sequencer @sbcp @user-requests

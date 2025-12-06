@@ -10,11 +10,11 @@ Feature: Sequencer Block Policy
     And the sequencer "A" is at period ID "10" targeting superblock "9"
 
   @sequencer @sbcp @blocks
-  Scenario: Starting a new block with an non-sequential number is rejected
+  Scenario Outline: Starting a new block with a non-sequential number is rejected
     Given the sequencer "A" has no open block
     And the sequencer "A" last sealed block number is <last_sealed>
     When the sequencer "A" attempts to begin building block <new_block>
-    Then an error should be raised:
+    Then the attempt should fail with error:
       """
       block number is not sequential
       """
@@ -27,10 +27,10 @@ Feature: Sequencer Block Policy
       | 100         | 99        |
 
   @sequencer @sbcp @blocks
-  Scenario: Starting a new block with an already open block is rejected
+  Scenario Outline: Starting a new block with an already open block is rejected
     Given the sequencer "A" has an open block "101"
     When the sequencer "A" attempts to begin building block <new_block>
-    Then an error should be raised:
+    Then the attempt should fail with error:
       """
       there is already an open block
       """
@@ -41,7 +41,7 @@ Feature: Sequencer Block Policy
       | 103       |
 
   @sequencer @sbcp @blocks
-  Scenario: Successful block beginning
+  Scenario Outline: Successful block beginning
     Given the sequencer "A" has no open block
     And the sequencer "A" last sealed block number is <last_sealed>
     When the sequencer "A" begins building block <new_block>
@@ -58,7 +58,7 @@ Feature: Sequencer Block Policy
     Given the sequencer "A" has an open block "101"
     And the sequencer "A" has an active instance "0xabc"
     When the sequencer "A" attempts to add local transaction "0x1" to block "101"
-    Then the addition should be rejected with error:
+    Then the attempt should fail with error:
       """
       local transactions are disabled while an instance is active
       """
@@ -76,7 +76,7 @@ Feature: Sequencer Block Policy
     Given the sequencer "A" has an open block "101"
     And the sequencer "A" has an active instance "0xdef"
     When the sequencer "A" attempts to seal block "101"
-    Then the seal should be rejected with error:
+    Then the attempt should fail with error:
       """
       there is already an active instance
       """

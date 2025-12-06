@@ -13,7 +13,7 @@ Feature: Sequencer Period and Settlement Management
   Scenario: Triggers settlement immediately when StartPeriod arrives and no block is pending
     Given the sequencer "A" is at period ID "20" targeting superblock "11"
     And there is no open block for sequencer "A"
-    And the last sealed block for period "9" has header:
+    And the last sealed block for period "20" has header:
       | field      | value  |
       | number     | 41     |
       | hash       | 0xabc1 |
@@ -22,13 +22,12 @@ Feature: Sequencer Period and Settlement Management
       | field               | value |
       | period_id           | 21    |
       | target_superblock   | 12    |
-    Then the sequencer should update its period to "21" and its target superblock to "12"
+    Then the sequencer "A" should update its period to "21" and its target superblock to "12"
     And it should request settlement proofs for period "20" targeting superblock "11" until block:
       | field      | value  |
       | number     | 41     |
       | hash       | 0xabc1 |
       | state_root | 0x111  |
-    And it should send Proof(period_id="10", superblock="11") to the publisher
 
   @sequencer @sbcp @periods
   Scenario: Proof is sent to SP once received from prover
@@ -51,7 +50,7 @@ Feature: Sequencer Period and Settlement Management
       | field               | value |
       | period_id           | 21    |
       | target_superblock   | 12    |
-    Then the sequencer should update its period to "21" and its target superblock to "12"
+    Then the sequencer "A" should update its period to "21" and its target superblock to "12"
     And no settlement pipeline should be triggered for period "20" yet
 
 
@@ -64,7 +63,7 @@ Feature: Sequencer Period and Settlement Management
       | number     | 42     |
       | hash       | 0xdef2 |
       | state_root | 0x222  |
-    And it should request settlement proofs for period "20" targeting superblock "11" until block:
+    Then it should request settlement proofs for period "20" targeting superblock "11" until block:
       | field      | value  |
       | number     | 42     |
       | hash       | 0xdef2 |

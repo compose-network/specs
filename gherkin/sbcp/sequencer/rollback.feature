@@ -22,17 +22,17 @@ Feature: Sequencer Rollback Handling
       | superblock_number | 5      |
       | superblock_hash   | 0x5001 |
       | period_id         | 9      |
-    Then the message should be rejected with error:
+    Then it should fail with error:
       """
       mismatched finalized state
       """
 
   @sequencer @sbcp @rollback
   Scenario: Applies rollback and clears blocks beyond the finalized superblock
-    Given the sequencer "A" sealed blocks "101,102" for period "8" targetting superblock "3"
-    Given the sequencer "A" sealed blocks "103,104" for period "9" targetting superblock "4"
-    Given the sequencer "A" sealed blocks "105,106" for period "10" targetting superblock "5"
-    And the sequencer "A" has an open block "107" for period "11" targetting superblock "6"
+    Given the sequencer "A" sealed blocks "101,102" for period "8" targeting superblock "3"
+    And the sequencer "A" sealed blocks "103,104" for period "9" targeting superblock "4"
+    And the sequencer "A" sealed blocks "105,106" for period "10" targeting superblock "5"
+    And the sequencer "A" has an open block "107" for period "11" targeting superblock "6"
     And the sequencer "A" has an active instance "0xdef"
     When the sequencer "A" receives Rollback:
       | field             | value  |
@@ -42,8 +42,8 @@ Feature: Sequencer Rollback Handling
     Then the sequencer "A" should accept the Rollback
     And the sequencer "A" should delete the open block "107", ending up with no open block
     And the sequencer "A" should clear the active instance "0xdef", ending up with no active instance
-    And the sequencer "A" should have sealed blocks "101,102" for period "8" targetting superblock "3"
-    And the sequencer "A" should have sealed blocks "103,104" for period "9" targetting superblock "4"
+    And the sequencer "A" should have sealed blocks "101,102" for period "8" targeting superblock "3"
+    And the sequencer "A" should have sealed blocks "103,104" for period "9" targeting superblock "4"
     And the sequencer "A" should have no sealed blocks targeting superblock greater than "4"
     And the sequencer "A" should have as head the block "104"
     And the sequencer "A" should have current period "12" and target superblock "5"
