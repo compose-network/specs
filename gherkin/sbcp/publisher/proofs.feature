@@ -36,6 +36,20 @@ Feature: Publisher Settlement Proofs
     And the cached per-chain proofs for superblock "6" should be discarded
 
   @publisher @sbcp @proofs
+  Scenario: Duplicate proofs from the same chain are ignored
+    Given SP received Proof from chain "1" for:
+      | field             | value |
+      | period_id         | 9     |
+      | superblock_number | 6     |
+      | proof_data        | 0xaa  |
+    When SP receives Proof from chain "1" for:
+      | field             | value |
+      | period_id         | 9     |
+      | superblock_number | 6     |
+      | proof_data        | 0xbb  |
+    Then the proof should be ignored
+
+  @publisher @sbcp @proofs
   Scenario: Upon successful request, the superblock proof is published to L1
     Given SP requested a superblock proof for superblock "6"
     When SP receives a successful response with a superblock proof "0xabc" for superblock "6"
@@ -67,6 +81,29 @@ Feature: Publisher Settlement Proofs
       | superblock   | 5     |
       | hash         | 0x999 |
     And the target superblock should reset to "6"
+
+  @publisher @sbcp @proofs @rollback
+  Scenario: Proof timeout clears cached proofs and active instances
+    Given chains "1,2" are active
+    And SP received Proof from chain "1" for:
+      | field             | value |
+      | period_id         | 9     |
+      | superblock_number | 6     |
+      | proof_data        | 0xaa  |
+    And SP received Proof from chain "2" for:
+      | field             | value |
+      | period_id         | 9     |
+      | superblock_number | 6     |
+      | proof_data        | 0xbb  |
+    When SP triggers a proof timeout
+    Then SP should broadcast a Rollback with:
+      | field        | value |
+      | period_id    | 10    |
+      | superblock   | 5     |
+      | hash         | 0x999 |
+    And chains "1,2" should be marked as inactive
+    And the target superblock should reset to "6"
+    And the cached per-chain proofs for superblock "6" should be discarded
 
   @publisher @sbcp @proofs
   Scenario: Advances the settled state monotonically
