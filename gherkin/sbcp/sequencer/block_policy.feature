@@ -70,6 +70,14 @@ Feature: Sequencer Block Policy
     When the sequencer "A" attempts to add local transaction "0x1" to block "101"
     Then the local transaction "0x1" should be added to block "101"
 
+  @sequencer @sbcp @blocks
+  Scenario: Local transactions are rejected when no block is open
+    Given the sequencer "A" has no open block
+    When the sequencer "A" attempts to add local transaction "0x1" to block "101"
+    Then the attempt should fail with error:
+      """
+      no pending block
+      """
 
   @sequencer @sbcp @blocks
   Scenario: Blocks cannot be sealed while an instance is active
@@ -79,6 +87,25 @@ Feature: Sequencer Block Policy
     Then the attempt should fail with error:
       """
       there is already an active instance
+      """
+
+  @sequencer @sbcp @blocks
+  Scenario: Sealing without an open block is rejected
+    Given the sequencer "A" has no open block
+    When the sequencer "A" attempts to seal block "101"
+    Then the attempt should fail with error:
+      """
+      no pending block
+      """
+
+  @sequencer @sbcp @blocks
+  Scenario: Sealing the wrong block number is rejected
+    Given the sequencer "A" has an open block "101"
+    And the sequencer "A" has no active instance
+    When the sequencer "A" attempts to seal block "100"
+    Then the attempt should fail with error:
+      """
+      block number to be sealed does not match the current block number
       """
 
   @sequencer @sbcp @blocks

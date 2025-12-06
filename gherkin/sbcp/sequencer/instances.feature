@@ -86,6 +86,15 @@ Feature: Sequencer Instance Management
     Then the sequencer "A" should unlock and process local transactions
     And the sequencer "A" should have no active instance
 
+  @sequencer @sbcp @instances
+  Scenario: Decided event for a different instance is rejected
+    Given the sequencer "A" has an open block tagged with period "20"
+    And the sequencer "A" has an active instance "0x1"
+    When the sequencer "A" decides instance "0x2"
+    Then the attempt should fail with error:
+      """
+      mismatched active instance ID
+      """
 
   @sequencer @sbcp @user-requests
   Scenario: Forwards user XTRequests to the SP
