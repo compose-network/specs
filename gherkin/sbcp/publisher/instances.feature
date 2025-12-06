@@ -25,31 +25,31 @@ Feature: Publisher Instance Scheduling
       1: [tx1_a, tx1_b]
       2: [tx2]
       """
-    Then an instance should be created:
+    Then SP should create an instance:
         | field           | value |
         | sequence_number | 1     |
-        | period_id      | 20     |
-        | xt_request     | "1: [tx1_a, tx1_b] 2: [tx2]" |
+        | period_id       | 20     |
+        | xt_request      | "1: [tx1_a, tx1_b] 2: [tx2]" |
     And chains "1,2" should be marked as active
 
   @publisher @sbcp @instances
   Scenario: Starts multiple instances with disjoint participants
-    Given SP started isntance:
+    Given SP started an instance:
       | field           | value |
       | sequence_number | 1     |
-      | period_id      | 20     |
-      | xt_request     | "1: [tx1_a, tx1_b] 2: [tx2]" |
+      | period_id       | 20     |
+      | xt_request      | "1: [tx1_a, tx1_b] 2: [tx2]" |
     And chains "3,4" are inactive
     When SP attempts to start an instance with XTRequest:
       """
       3: [tx3]
       4: [tx4]
       """
-    Then an instance should be created:
+    Then SP should create an instance:
         | field           | value |
         | sequence_number | 2     |
-        | period_id      | 20     |
-        | xt_request     | "3: [tx3] 4: [tx4]" |
+        | period_id       | 20     |
+        | xt_request      | "3: [tx3] 4: [tx4]" |
     And chains "1,2" should be marked as active
     And chains "3,4" should be marked as active
 
@@ -87,19 +87,19 @@ Feature: Publisher Instance Scheduling
     And chain "1" should be marked as inactive
 
   @publisher @sbcp @instances
-  Scenario: Sequence numbers increase monotonically within the same period
-    Given the last instance SP started in the current period has sequence number <last>
+  Scenario Outline: Sequence numbers increase monotonically within the same period
+    Given the last instance SP started was in period "20" with sequence number <last>
     And chains "3,4" are inactive
     When SP attempts to start an instance with XTRequest:
       """
       3: [tx3]
       4: [tx4]
       """
-    Then the new instance is created:
+    Then SP should create an instance:
         | field           | value |
-        | sequence_number | <new>     |
-        | period_id      | 5     |
-        | xt_request     | "3: [tx3], 4: [tx4]" |
+        | sequence_number | <new> |
+        | period_id       | 20    |
+        | xt_request      | "3: [tx3] 4: [tx4]" |
     And chains "3,4" should be marked as active
 
     Examples:
@@ -109,20 +109,20 @@ Feature: Publisher Instance Scheduling
       | 5    | 6   |
 
   @publisher @sbcp @instances
-  Scenario: Sequence numbers reset at the start of a new period
-    Given the last instance SP started in the previous period has sequence number <last>
-    And SP starts period "21"
+  Scenario Outline: Sequence numbers reset at the start of a new period
+    Given the last instance SP started was in period "20" with sequence number <last>
+    And SP is currently at period ID "21" targeting superblock "9"
     And chains "1,2" are inactive
     When SP attempts to start an instance with XTRequest:
       """
       1: [tx1]
       2: [tx2]
       """
-    Then the new instance is created:
+    Then SP should create an instance:
         | field           | value |
         | sequence_number | 1     |
-        | period_id      | 21     |
-        | xt_request     | "1: [tx1], 2: [tx2]" |
+        | period_id       | 21    |
+        | xt_request      | "1: [tx1] 2: [tx2]" |
     And chains "1,2" should be marked as active
 
     Examples:

@@ -30,27 +30,30 @@ Feature: Publisher Period Management
       | target_superblock   | 7     |
 
   @publisher @sbcp @periods @rollback
-  Scenario: Rejects StartPeriod when the proof window would be exceeded
-    Given SP is currently at period ID "30" targeting superblock <current_superblock>
+  Scenario Outline: Rejects StartPeriod when the proof window would be exceeded
+    Given SP is currently at period ID "30" targeting superblock "<current_superblock>"
     And SP enforces a proof window of <proof_window> periods
-    And the last finalized superblock number is <last_finalized_superblock> with hash "0xabc"
+    And the last finalized superblock is:
+      | field  | value |
+      | number | <last_finalized_superblock> |
+      | hash   | 0xabc |
     When SP attempts to start a new period
-    Then the call should raise the error:
+    Then the attempt should fail with error:
       """
-      prof window exceeded
+      proof window exceeded
       """
     And no StartPeriod for period "31" should be emitted
     And SP should broadcast a Rollback with:
       | field        | value |
       | period_id    | 31    |
-      | superblock   | <last_finalized_superblock>    |
+      | superblock   | <last_finalized_superblock> |
       | hash         | 0xabc |
     And all active instances should be cleared
-    And the next target superblock should reset to <superblock_reset>
+    And the target superblock should reset to "<superblock_reset>"
+
     Examples:
       | proof_window | current_superblock | last_finalized_superblock | superblock_reset |
-      | 1            | 12              | 10                           | 11               |
-      | 2            | 13              | 10                           | 11               |
-      | 10           | 21              | 10                           | 11               |
-      | 10           | 20              | 9                            | 10               |
-
+      | 1            | 12                 | 10                          | 11               |
+      | 2            | 13                 | 10                          | 11               |
+      | 10           | 21                 | 10                          | 11               |
+      | 10           | 20                 | 9                           | 10               |
