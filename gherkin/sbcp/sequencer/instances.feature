@@ -5,6 +5,8 @@ Feature: Sequencer Instance Management
   Furthermore, sequence numbers for instances must increase strictly within the same period.
   Only one active instance is allowed per sequencer at any time.
   Once the current instance gets decided, local transactions can be processed again and new instances are allowed.
+  Users can submit an XTRequest to the sequencer, but the sequencer should only forward it to the SP and discard it.
+  That is, only the SP is allowed to start new instances.
 
   Background:
     Given there is a chain "1" with sequencer "A"
@@ -79,3 +81,16 @@ Feature: Sequencer Instance Management
     Then the sequencer "A" should unlock and process local transactions
     And the sequencer "A" has no active instance
 
+
+  @sequencer @sbcp @user-requests
+  Scenario: Forwards user XTRequests to the SP
+    When a user submits an XTRequest to sequencer "A":
+      """
+      1: [tx1]
+      2: [tx2]
+      """
+    Then the sequencer "A" should forward to the SP the XTRequest:
+        """
+        1: [tx1]
+        2: [tx2]
+        """
