@@ -700,3 +700,36 @@ The SP then needs to:
 - Verify the proof for `Output`.
 - Verify that `Output.mailbox_contract` matches the expected ExternalMailbox address for the WS.
 - As done for other rollups, verify that the `Output.mailbox_root` is correct considering list of mailbox roots, and match these roots against native ones. 
+
+
+## Future Work
+
+### Partial Rollback with Multiple CDCP Instances
+
+When there are multiple CDCP instances within a single settlement window, a problematic scenario can arise:
+- Instance 1 succeeds on both ER and the native rollups.
+- Instance 2 appears to succeed (WSDecided(1) and Decided(1)), but later the ER fails to persist the corresponding state/mailbox roots.
+- At settlement time, the SP detects a mismatch for instance 2 and must trigger a rollback.
+
+The challenge is that the correct rollback point is logically **“right after instance 1”**, and not the last fully finalized superblock for the whole network (which is currently defined).
+Rolling back all activity since the previous period’s superblock would incorrectly drop the successfully executed instance 1.
+
+**Possible Direction: Micro-Superblock Subcheckpoints** 
+
+A possible solution is to introduce **micro-superblock (microSB) subcheckpoints** at each composability instance boundary:
+- Each composability instance (including both SCP and CDCP instances) induces a microSB checkpoint, ordered by sequence number, that commits to:
+  - the per-rollup state roots immediately after the instance, and
+  - the mailbox roots that reflect the instance’s messages.
+- These microSBs form a chain of subcheckpoints within (or across) periods, ordered exactly as the protocol executes instances.
+
+For CDCP specifically:
+- Native sequencers could attach their local `state_root` (or equivalent checkpoint root) to their `Vote(1)` for the instance.
+- The WS already tracks the ER’s relevant `state_root` through its ZK program.
+- The SP stores this per-instance bundle as a **microSB checkpoint**.
+
+At settlement time:
+- If all microSBs for a period can be proved consistent (including the ER mailbox roots), the SP can advance the network to the last microSB as usual.
+- If a later instance (e.g., instance 2) turns out to be inconsistent, the SP can instruct native sequencers and WS to **roll back only to the last valid microSB**, e.g., the checkpoint after instance 1.
+
+Note that microSB checkpoints can be used to all composability instances (both SCP and CDCP), with the exact same rules as described above.
+ 
