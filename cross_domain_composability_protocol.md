@@ -42,6 +42,12 @@ The WS is expected to have a communication channel with the ER.
 
 For now, no byzantine faults are considered in the system.
 
+We further assume partial synchrony with:
+- a known upper bound on end-to-end delays between WS and ER, and
+- a known upper bound on the ER clock skew relative to the WS clock.
+
+These bounds are used to derive per-instance timeouts for ER inclusion.
+
 ## Informal Protocol Intuition
 
 The WS will behave as it's the actual sequencer of the ER.
@@ -303,9 +309,14 @@ The Wrapped Sequencer (WS) has the following rules:
 11. If the ER transaction is successful, it sends a `WSDecided(1)` message to the SP, indicating success and terminates.
 
 The special transaction to the ER, `safe_execute`, allows an atomic execution of the mailbox staging and the main transaction.
+For each instance, the WS passes a timeout parameter, derived from the period and the delay/clock-skew bounds above, so that late inclusions on the ER side revert.
 It has the following pseudo-code:
 ```text
-FUNCTION safe_execute(inboxMsgs, outboxMsgs, txs) onlyInvocableByWS:
+FUNCTION safe_execute(inboxMsgs, outboxMsgs, txs, timeout) onlyInvocableByWS:
+
+    # 0. Enforce instance timeout
+    IF block.timestamp > timeout:
+        REVERT Timeout
 
     # 1. Pre-populate inbox messages in ExternalMailbox
     FOR each msg IN inboxMsgs:
@@ -444,6 +455,7 @@ writtenCache = set()   # prevents re-broadcasting identical writes
 nativeDecided = None
 # fixed state-root snapshot which every simulation should be executed on top
 state_root = get_current_state_root()
+timeout = compute_er_timeout(instance_metadata)  # based on Δ_delay, Δ_clock
 
 procedure start():
     run_simulation()
@@ -452,7 +464,7 @@ procedure run_simulation():
     if state != SIMULATING:
         return
 
-    resp = simulate_safe_execute(state_root, putInbox, putOutbox, txs)
+    resp = simulate_safe_execute(state_root, putInbox, putOutbox, txs, timeout)
 
     if resp.error exists:
         send(SP, WSDecided(0))
@@ -514,7 +526,7 @@ procedure attempt_er_call():
         return    # NSs already rejected
 
     state = WAIT_ER_RESPONSE
-    err = submit_safe_execute_to_ER(putInbox, putOutbox, txs)
+    err = submit_safe_execute_to_ER(putInbox, putOutbox, txs, timeout)
     if err:
         send(SP, WSDecided(0))
     else:
