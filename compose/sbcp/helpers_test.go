@@ -1,6 +1,10 @@
 package sbcp
 
-import "github.com/compose-network/specs/compose"
+import (
+	"context"
+
+	"github.com/compose-network/specs/compose"
+)
 
 type chainRequest struct {
 	chain compose.ChainID
@@ -131,16 +135,18 @@ type fakeSequencerMessenger struct {
 	}
 }
 
-func (m *fakeSequencerMessenger) ForwardRequest(request compose.XTRequest) {
+func (m *fakeSequencerMessenger) ForwardRequest(ctx context.Context, request compose.XTRequest) error {
 	m.requests = append(m.requests, request)
+	return nil
 }
 
-func (m *fakeSequencerMessenger) SendProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte) {
+func (m *fakeSequencerMessenger) SendProof(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte) error {
 	m.proofs = append(m.proofs, struct {
 		periodID         compose.PeriodID
 		superblockNumber compose.SuperblockNumber
 		proof            []byte
 	}{periodID, superblockNumber, append([]byte(nil), proof...)})
+	return nil
 }
 
 // mkHeader creates a minimal BlockHeader for tests.
