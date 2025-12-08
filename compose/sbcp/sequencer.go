@@ -55,7 +55,7 @@ type Sequencer interface {
 type SequencerProver interface {
 	// RequestProofs starts the settlement pipeline using the provided block header as head.
 	// If nil, it means there's no sealed block for the period.
-	RequestProofs(blockHeader *BlockHeader, superblockNumber compose.SuperblockNumber) []byte
+	RequestProofs(ctx context.Context, blockHeader *BlockHeader, superblockNumber compose.SuperblockNumber) ([]byte, error)
 }
 
 type SequencerMessenger interface {
@@ -163,7 +163,11 @@ func (s *sequencer) startSettlement(ctx context.Context, periodID compose.Period
 	}
 	s.mu.Unlock()
 	// Request proof to prover
-	proof := s.prover.RequestProofs(header, superblockNumber)
+	proof, err := s.prover.RequestProofs(ctx, header, superblockNumber)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to request proofs from prover")
+		return err
+	}
 	// Send proof to SP
 	return s.messenger.SendProof(ctx, periodID, superblockNumber, proof)
 }

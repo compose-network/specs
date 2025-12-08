@@ -118,12 +118,12 @@ type fakeSequencerProver struct {
 	nextProof []byte
 }
 
-func (p *fakeSequencerProver) RequestProofs(hdr *BlockHeader, sb compose.SuperblockNumber) []byte {
+func (p *fakeSequencerProver) RequestProofs(hdr *BlockHeader, sb compose.SuperblockNumber) ([]byte, error) {
 	p.calls = append(p.calls, struct {
 		hdr *BlockHeader
 		sb  compose.SuperblockNumber
 	}{hdr, sb})
-	return append([]byte(nil), p.nextProof...)
+	return append([]byte(nil), p.nextProof...), nil
 }
 
 type fakeSequencerMessenger struct {
