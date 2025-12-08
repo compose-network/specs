@@ -1,6 +1,7 @@
 package sbcp
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -25,7 +26,7 @@ var (
 
 type Sequencer interface {
 	// StartPeriod and Rollback are called when the publisher sends their respective messages.
-	StartPeriod(periodID compose.PeriodID, targetSuperblockNumber compose.SuperblockNumber) error
+	StartPeriod(ctx context.Context, periodID compose.PeriodID, targetSuperblockNumber compose.SuperblockNumber) error
 	Rollback(
 		superblockNumber compose.SuperblockNumber,
 		superblockHash compose.SuperblockHash,
@@ -33,7 +34,7 @@ type Sequencer interface {
 	) (BlockHeader, error)
 
 	// ReceiveXTRequest is called whenever a request from a user is received.
-	ReceiveXTRequest(request compose.XTRequest)
+	ReceiveXTRequest(ctx context.Context, request compose.XTRequest) error
 
 	// AdvanceSettledState is called when the L1 settlement event has occurred.
 	AdvanceSettledState(SettledState)
@@ -48,7 +49,7 @@ type Sequencer interface {
 	// OnDecidedInstance is an SCP decision hook. Unlocks local txs (internal logic).
 	OnDecidedInstance(id compose.InstanceID) error
 	// EndBlock: hook for when block ends
-	EndBlock(b BlockHeader) error
+	EndBlock(ctx context.Context, b BlockHeader) error
 }
 
 type SequencerProver interface {
@@ -58,8 +59,8 @@ type SequencerProver interface {
 }
 
 type SequencerMessenger interface {
-	ForwardRequest(request compose.XTRequest)
-	SendProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte)
+	ForwardRequest(ctx context.Context, request compose.XTRequest) error
+	SendProof(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte) error
 }
 
 type SequencerState struct {
@@ -115,12 +116,13 @@ func NewSequencer(
 
 // ReceiveXTRequest is called whenever a request from a user is received.
 // It should be forwarded to the publisher, who has the rights of starting an instance for it.
-func (s *sequencer) ReceiveXTRequest(request compose.XTRequest) {
-	s.messenger.ForwardRequest(request)
+func (s *sequencer) ReceiveXTRequest(ctx context.Context, request compose.XTRequest) error {
+	return s.messenger.ForwardRequest(ctx, request)
 }
 
 // StartPeriod starts a new period, which triggers the settlement pipeline if there's no active block.
 func (s *sequencer) StartPeriod(
+	ctx context.Context,
 	periodID compose.PeriodID,
 	targetSuperblockNumber compose.SuperblockNumber,
 ) error {
@@ -142,7 +144,7 @@ func (s *sequencer) StartPeriod(
 	// Else, it can be triggered right away.
 	if noPendingBlock {
 		s.logger.Info().Msg("No pending block, triggering settlement pipeline")
-		s.startSettlement(periodID-1, targetSuperblockNumber-1)
+		s.startSettlement(ctx, periodID-1, targetSuperblockNumber-1)
 	} else {
 		s.logger.Info().Msg("Started new period, but pending block exists, settlement pipeline will wait")
 	}
@@ -152,7 +154,7 @@ func (s *sequencer) StartPeriod(
 // startSettlement starts the settlement pipeline for the given period.
 // It requests a proof from the prover. Note that this operation may take a while and thus it is done outside locks.
 // Then, it sends the proof to the SP.
-func (s *sequencer) startSettlement(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber) {
+func (s *sequencer) startSettlement(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber) {
 	s.mu.Lock()
 	var header *BlockHeader
 	block, ok := s.SealedBlockHead[periodID]
@@ -163,7 +165,7 @@ func (s *sequencer) startSettlement(periodID compose.PeriodID, superblockNumber 
 	// Request proof to prover
 	proof := s.prover.RequestProofs(header, superblockNumber)
 	// Send proof to SP
-	s.messenger.SendProof(periodID, superblockNumber, proof)
+	s.messenger.SendProof(ctx, periodID, superblockNumber, proof)
 }
 
 // BeginBlock is a hook called at the start of a new L2 block.
@@ -245,7 +247,7 @@ func (s *sequencer) OnDecidedInstance(id compose.InstanceID) error {
 	return nil
 }
 
-func (s *sequencer) EndBlock(b BlockHeader) error {
+func (s *sequencer) EndBlock(ctx context.Context, b BlockHeader) error {
 	s.mu.Lock()
 	if s.PendingBlock == nil {
 		s.mu.Unlock()
@@ -280,7 +282,7 @@ func (s *sequencer) EndBlock(b BlockHeader) error {
 	// therefore it's time to request proofs for it.
 	if shouldStartSettlement {
 		s.logger.Info().Msg("Period was ahead of sealed block, triggering settlement pipeline")
-		s.startSettlement(settlementPeriod, settlementSuperblock)
+		s.startSettlement(ctx, settlementPeriod, settlementSuperblock)
 	}
 	return nil
 }
