@@ -101,7 +101,7 @@ func TestSequencer_EndBlock_seals_and_updates_head(t *testing.T) {
 
 	require.NoError(t, s.BeginBlock(31))
 	// Seal mismatch
-	assert.ErrorIs(t, s.EndBlock(context.TODO(), mkHeader(32)), ErrBlockSealMismatch)
+	assert.ErrorIs(t, s.EndBlock(t.Context(), mkHeader(32)), ErrBlockSealMismatch)
 
 	// Seal ok
 	require.NoError(t, s.EndBlock(context.TODO(), mkHeader(31)))
