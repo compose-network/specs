@@ -148,9 +148,10 @@ message Message {
     // SBCP messages
     StartPeriod start_period = 11;
     Rollback rollback = 12;
+    Proof proof = 13;
 
     // CDCP
-    NativeDecided native_decided = 13;
-    WSDecided ws_decided = 14;
+    NativeDecided native_decided = 14;
+    WSDecided ws_decided = 15;
   }
 }
