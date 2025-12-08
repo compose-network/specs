@@ -165,7 +165,14 @@ func (s *sequencer) startSettlement(ctx context.Context, periodID compose.Period
 	// Request proof to prover
 	proof := s.prover.RequestProofs(header, superblockNumber)
 	// Send proof to SP
-	s.messenger.SendProof(ctx, periodID, superblockNumber, proof)
+	err := s.messenger.SendProof(ctx, periodID, superblockNumber, proof)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Uint64("period_id", uint64(periodID)).
+			Uint64("superblock_number", uint64(superblockNumber)).
+			Msg("Failed to send proof to SP")
+	}
 }
 
 // BeginBlock is a hook called at the start of a new L2 block.

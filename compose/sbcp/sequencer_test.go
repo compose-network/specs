@@ -212,7 +212,8 @@ func TestSequencer_ReceiveXTRequest_forwardsToPublisher(t *testing.T) {
 		chainReq(2, []byte("b")),
 	)
 
-	s.ReceiveXTRequest(context.TODO(), req)
+	err := s.ReceiveXTRequest(context.TODO(), req)
+	require.NoError(t, err)
 
 	require.Len(t, messenger.requests, 1)
 	assert.Equal(t, req, messenger.requests[0])
