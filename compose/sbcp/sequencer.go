@@ -144,17 +144,17 @@ func (s *sequencer) StartPeriod(
 	// Else, it can be triggered right away.
 	if noPendingBlock {
 		s.logger.Info().Msg("No pending block, triggering settlement pipeline")
-		s.startSettlement(ctx, periodID-1, targetSuperblockNumber-1)
-	} else {
-		s.logger.Info().Msg("Started new period, but pending block exists, settlement pipeline will wait")
+		return s.startSettlement(ctx, periodID-1, targetSuperblockNumber-1)
 	}
+
+	s.logger.Info().Msg("Started new period, but pending block exists, settlement pipeline will wait")
 	return nil
 }
 
 // startSettlement starts the settlement pipeline for the given period.
 // It requests a proof from the prover. Note that this operation may take a while and thus it is done outside locks.
 // Then, it sends the proof to the SP.
-func (s *sequencer) startSettlement(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber) {
+func (s *sequencer) startSettlement(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber) error {
 	s.mu.Lock()
 	var header *BlockHeader
 	block, ok := s.SealedBlockHead[periodID]
@@ -165,14 +165,7 @@ func (s *sequencer) startSettlement(ctx context.Context, periodID compose.Period
 	// Request proof to prover
 	proof := s.prover.RequestProofs(header, superblockNumber)
 	// Send proof to SP
-	err := s.messenger.SendProof(ctx, periodID, superblockNumber, proof)
-	if err != nil {
-		s.logger.Error().
-			Err(err).
-			Uint64("period_id", uint64(periodID)).
-			Uint64("superblock_number", uint64(superblockNumber)).
-			Msg("Failed to send proof to SP")
-	}
+	return s.messenger.SendProof(ctx, periodID, superblockNumber, proof)
 }
 
 // BeginBlock is a hook called at the start of a new L2 block.
@@ -289,7 +282,7 @@ func (s *sequencer) EndBlock(ctx context.Context, b BlockHeader) error {
 	// therefore it's time to request proofs for it.
 	if shouldStartSettlement {
 		s.logger.Info().Msg("Period was ahead of sealed block, triggering settlement pipeline")
-		s.startSettlement(ctx, settlementPeriod, settlementSuperblock)
+		return s.startSettlement(ctx, settlementPeriod, settlementSuperblock)
 	}
 	return nil
 }
