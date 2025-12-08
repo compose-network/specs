@@ -104,7 +104,7 @@ func TestSequencer_EndBlock_seals_and_updates_head(t *testing.T) {
 	assert.ErrorIs(t, s.EndBlock(t.Context(), mkHeader(32)), ErrBlockSealMismatch)
 
 	// Seal ok
-	require.NoError(t, s.EndBlock(context.TODO(), mkHeader(31)))
+	require.NoError(t, s.EndBlock(t.Context(), mkHeader(31)))
 	assert.Nil(t, s.PendingBlock)
 	assert.Equal(t, BlockNumber(31), s.Head)
 	// SealedBlockHead entry for current period exists
@@ -120,10 +120,10 @@ func TestSequencer_EndBlock_rejects_active_instance(t *testing.T) {
 	id := compose.InstanceID{9}
 	require.NoError(t, s.OnStartInstance(id, s.PeriodID, compose.SequenceNumber(1)))
 
-	assert.ErrorIs(t, s.EndBlock(context.TODO(), mkHeader(31)), ErrActiveInstanceExists)
+	assert.ErrorIs(t, s.EndBlock(t.Context(), mkHeader(31)), ErrActiveInstanceExists)
 
 	require.NoError(t, s.OnDecidedInstance(id))
-	require.NoError(t, s.EndBlock(context.TODO(), mkHeader(31)))
+	require.NoError(t, s.EndBlock(t.Context(), mkHeader(31)))
 }
 
 func TestSequencer_EndBlock_triggers_prev_period_settlement(t *testing.T) {
@@ -135,11 +135,11 @@ func TestSequencer_EndBlock_triggers_prev_period_settlement(t *testing.T) {
 	require.NoError(t, s.BeginBlock(41))
 
 	// Period rolls to 10 while block is open; no immediate prover call due to pending block
-	require.NoError(t, s.StartPeriod(context.TODO(), compose.PeriodID(10), compose.SuperblockNumber(11)))
+	require.NoError(t, s.StartPeriod(t.Context(), compose.PeriodID(10), compose.SuperblockNumber(11)))
 	assert.Len(t, p.calls, 0)
 
 	// Seal the block → should trigger settlement for period 9 with sb target (11-1)=10
-	require.NoError(t, s.EndBlock(context.TODO(), mkHeader(41)))
+	require.NoError(t, s.EndBlock(t.Context(), mkHeader(41)))
 	require.Len(t, p.calls, 1)
 	call := p.calls[0]
 	if assert.NotNil(t, call.hdr) {
@@ -160,7 +160,7 @@ func TestSequencer_StartPeriod_triggers_immediate_settlement_when_no_pending(t *
 	p.nextProof = []byte("seq-proof")
 
 	// Case 1: no sealed block for previous period → nil header
-	require.NoError(t, s.StartPeriod(context.TODO(), compose.PeriodID(11), compose.SuperblockNumber(12)))
+	require.NoError(t, s.StartPeriod(t.Context(), compose.PeriodID(11), compose.SuperblockNumber(12)))
 	require.Len(t, p.calls, 1)
 	// Prover was called with nil header and superblock number 11
 	assert.Nil(t, p.calls[0].hdr)
@@ -180,7 +180,7 @@ func TestSequencer_StartPeriod_triggers_immediate_settlement_when_no_pending(t *
 		PeriodID:         11,
 		SuperblockNumber: 12,
 	}
-	require.NoError(t, s.StartPeriod(context.TODO(), compose.PeriodID(12), compose.SuperblockNumber(13)))
+	require.NoError(t, s.StartPeriod(t.Context(), compose.PeriodID(12), compose.SuperblockNumber(13)))
 	require.Len(t, p.calls, 1)
 	// Check prover call content
 	if assert.NotNil(t, p.calls[0].hdr) {
@@ -200,7 +200,7 @@ func TestSequencer_StartPeriod_active_instance_does_not_defer_in_impl(t *testing
 	// No pending block, set active instance only
 	s.ActiveInstanceID = &compose.InstanceID{1}
 
-	require.NoError(t, s.StartPeriod(context.TODO(), compose.PeriodID(3), compose.SuperblockNumber(4)))
+	require.NoError(t, s.StartPeriod(t.Context(), compose.PeriodID(3), compose.SuperblockNumber(4)))
 	// Implementation triggers immediately
 	require.Len(t, p.calls, 1)
 }
@@ -212,7 +212,7 @@ func TestSequencer_ReceiveXTRequest_forwardsToPublisher(t *testing.T) {
 		chainReq(2, []byte("b")),
 	)
 
-	err := s.ReceiveXTRequest(context.TODO(), req)
+	err := s.ReceiveXTRequest(t.Context(), req)
 	require.NoError(t, err)
 
 	require.Len(t, messenger.requests, 1)
