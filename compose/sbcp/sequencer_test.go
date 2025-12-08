@@ -1,7 +1,6 @@
 package sbcp
 
 import (
-	"context"
 	"io"
 	"testing"
 
@@ -53,7 +52,7 @@ func TestSequencer_BeginBlock_ok_and_errors(t *testing.T) {
 	assert.ErrorIs(t, s.BeginBlock(12), ErrBlockAlreadyOpen)
 
 	// Seal to clear pending
-	require.NoError(t, s.EndBlock(context.TODO(), mkHeader(11)))
+	require.NoError(t, s.EndBlock(t.Context(), mkHeader(11)))
 
 	// Not sequential
 	assert.ErrorIs(t, s.BeginBlock(13), ErrBlockNotSequential)
