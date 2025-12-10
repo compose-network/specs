@@ -1,7 +1,6 @@
 # Should Rollups Work Without the Shared Publisher?
 
-**TL;DR: Yes.** Rollups should keep producing local blocks when SP is down. Cross-chain stuff stops, but users can still
-transact locally.
+**TL;DR: Yes.** Rollups should keep producing local blocks when SP is down. Cross-chain stuff stops, but users can still transact locally.
 
 ---
 
@@ -33,39 +32,90 @@ SP is **NOT** needed for:
 - Local transaction processing
 - Running the EVM
 
-The fault model says, "SP must be live to guarantee termination" – but that's about cross-chain tx completion, not local
-operation.
+The fault model says, "SP must be live to guarantee termination" – but that's about cross-chain tx completion, not local operation.
 
 ---
 
 ## Proposed Solution: Solo Mode
 
-Two operating modes:
+### Operating Modes
 
-### Connected Mode (SP Available)
+```
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│   CONNECTED MODE (SP Available)                                │
+│   ─────────────────────────────                                │
+│   • Local transactions: YES                                    │
+│   • Cross-chain transactions: YES                              │
+│   • Period/Superblock tags: From SP (StartPeriod)              │
+│   • Settlement: Active                                         │
+│                                                                │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│   SOLO MODE (SP Unavailable)                                   │
+│   ─────────────────────────                                    │
+│   • Local transactions: YES                                    │
+│   • Cross-chain transactions: REJECTED (return error to user)  │
+│   • Period/Superblock tags: Derived from L1 + genesis config   │
+│   • Settlement: Deferred until SP reconnects                   │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
 
-- Everything works normally
-- Cross-chain txs via SCP
-- Settlement happens on schedule
+### Mode Transitions
 
-### Solo Mode (SP Unavailable)
-
-- Local transactions work
-- Cross-chain requests rejected with clear error
-- Period/superblock derived from genesis time + L1 state
-- Blocks marked as "unsafe" only (no finalization until SP returns) - im not sure about this
+```
+                    ┌─────────────────┐
+         ┌────────►│  CONNECTED MODE │◄────────┐
+         │         └────────┬────────┘         │
+         │                  │                  │
+         │     SP heartbeat │                  │
+         │        timeout   │                  │ SP reconnects
+         │                  │                  │ + StartPeriod
+         │                  ▼                  │
+         │         ┌─────────────────┐         │
+         └─────────│    SOLO MODE    │─────────┘
+                   └─────────────────┘
+```
 
 ---
 
 ## How It Works
 
-### Startup
+### Startup Sequence
 
 ```
-1. Bootstrap from L1 (get last finalized superblock)
-2. Try connecting to SP (X second timeout, TBD)
-3. If connected → Connected Mode
-4. If timeout → Solo Mode (derive period from genesis + current time)
+                         Sequencer Start
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Load last finalized │
+                    │  state from L1       │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Attempt SP connect  │
+                    │  (timeout: TBD)      │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┴────────────────┐
+              │                                 │
+              ▼                                 ▼
+     ┌─────────────────┐               ┌─────────────────┐
+     │  SP Connected   │               │  Timeout/Failed │
+     └────────┬────────┘               └────────┬────────┘
+              │                                 │
+              ▼                                 ▼
+     ┌─────────────────┐               ┌─────────────────┐
+     │  Receive        │               │  Derive period  │
+     │  StartPeriod    │               │  from L1 state  │
+     └────────┬────────┘               └────────┬────────┘
+              │                                 │
+              ▼                                 ▼
+     ┌─────────────────┐               ┌─────────────────┐
+     │  CONNECTED MODE │               │    SOLO MODE    │
+     └─────────────────┘               └─────────────────┘
 ```
 
 ### Period Derivation (when SP is down)
@@ -73,7 +123,7 @@ Two operating modes:
 ```go
 func derivePeriod(genesisTime, now time.Time) PeriodID {
     elapsed := now.Sub(genesisTime)
-return PeriodID(elapsed / 3840 * time.Second)
+    return PeriodID(elapsed / 3840 * time.Second)
 }
 ```
 
@@ -87,12 +137,78 @@ if mode == SoloMode {
 }
 ```
 
-### When SP Reconnects
+---
 
-1. Receive `StartPeriod` from SP
-2. Compare local state vs SP state
-3. If diverged: sync to SP's view (solo blocks may be orphaned – that's fine, they were never finalized)
-4. Resume Connected Mode
+## Recovery: When SP Reconnects
+
+When SP comes back online, the sequencer receives `StartPeriod` and needs to reconcile state.
+
+### Recovery Scenarios
+
+**Scenario 1: States Match (Happy Path)**
+```
+Solo Mode derived:    Period 42, Superblock 142
+SP says:              Period 42, Superblock 142
+
+→ Resume Connected Mode, nothing special needed
+```
+
+**Scenario 2: Sequencer Behind SP**
+
+Other rollups kept finalizing while this one was in Solo Mode.
+
+```
+Solo Mode derived:    Period 42, Superblock 142
+SP says:              Period 44, Superblock 144
+
+→ Sync forward to SP's view
+→ Solo blocks still valid, just tagged with old period
+→ Will be included in next settlement
+```
+
+**Scenario 3: Sequencer Ahead of SP**
+
+SP was down, came back, and triggered a rollback (proof timeout).
+
+```
+Timeline:
+- Period 100: Last finalized superblock (on L1)
+- Period 101: SP goes down
+- Period 102: Sequencer in Solo Mode, produces blocks for "Superblock 102"
+- Period 103: SP comes back, proof for 101 failed → rollback to Superblock 100
+            → SP now says: Period 103, Superblock 101
+
+Solo Mode state:      targetSuperblock = 102+
+SP says:              targetSuperblock = 101
+
+→ Solo Mode blocks (101-102) will NOT be finalized
+→ They're orphaned (same as a reorg)
+→ Transactions return to mempool, get re-included
+→ Sequencer syncs to SP's view and continues
+```
+
+### Recovery Logic
+
+```go
+func (s *Sequencer) onStartPeriod(msg StartPeriod) error {
+    if s.mode == SoloMode {
+        // Log if we produced blocks that won't finalize
+        if s.targetSuperblock > msg.SuperblockNumber {
+            s.log.Warn("Solo mode blocks may be orphaned",
+                "local_superblock", s.targetSuperblock,
+                "sp_superblock", msg.SuperblockNumber)
+        }
+
+        // SP is authoritative - sync to its view
+        s.periodID = msg.PeriodID
+        s.targetSuperblock = msg.SuperblockNumber
+        s.mode = ConnectedMode
+    }
+    return nil
+}
+```
+
+**Key insight:** No complex reconciliation needed. SP is authoritative, sequencer just follows. Solo Mode blocks were never finalized on L1, so orphaning them is safe.
 
 ---
 
@@ -111,7 +227,7 @@ This is basically the same as a chain reorg.
 
 ## Limits
 
-- **Max Solo Mode duration**: ~3 periods (~3.2 hours) then halt TBD
+- **Max Solo Mode duration**: ~3 periods (~3.2 hours) then halt (TBD)
 - **No cross-chain**: XTRequests rejected
 - **No settlement**: Proofs deferred until SP returns
 - **Blocks stay unsafe**: No finalization without SP
