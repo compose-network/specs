@@ -1,23 +1,51 @@
-# Rollup Behavior During Shared Publisher Unavailability
+# Shared Publisher Unavailability <!-- omit from toc -->
 
-## Abstract
+This document specifies the expected behavior of Compose rollups when the Shared Publisher (SP) is unavailable. It defines a dual-mode operation model that allows rollups to maintain liveness for local transactions while gracefully degrading cross-chain functionality.
 
-This document specifies the expected behavior of Compose rollups when the Shared Publisher (SP) is unavailable. It
-defines a dual-mode operation model that allows rollups to maintain liveness for local transactions while gracefully
-degrading cross-chain functionality.
+## Table of Contents <!-- omit from toc -->
 
-## 1. Overview
+- [Overview](#overview)
+  - [Problem Statement](#problem-statement)
+  - [Design Rationale](#design-rationale)
+  - [Specification Basis](#specification-basis)
+- [Operating Modes](#operating-modes)
+  - [Mode Definitions](#mode-definitions)
+  - [Mode Transitions](#mode-transitions)
+- [Startup Behavior](#startup-behavior)
+  - [Startup Sequence](#startup-sequence)
+  - [L1 Bootstrap](#l1-bootstrap)
+  - [Period Derivation (Solo Mode)](#period-derivation-solo-mode)
+- [Runtime Behavior](#runtime-behavior)
+  - [Local Transaction Processing](#local-transaction-processing)
+  - [Cross-Chain Transaction Handling](#cross-chain-transaction-handling)
+  - [Active SCP Instance Handling](#active-scp-instance-handling)
+- [Recovery Protocol](#recovery-protocol)
+  - [Recovery Trigger](#recovery-trigger)
+  - [State Reconciliation](#state-reconciliation)
+  - [Recovery Scenarios](#recovery-scenarios)
+  - [Recovery Implementation](#recovery-implementation)
+- [Block Safety](#block-safety)
+  - [Safety Levels](#safety-levels)
+  - [Safety Levels by Mode](#safety-levels-by-mode)
+  - [Solo Mode Block Disposition](#solo-mode-block-disposition)
+- [Operational Limits](#operational-limits)
+- [Security Considerations](#security-considerations)
+  - [Safety Properties](#safety-properties)
+  - [Liveness Properties](#liveness-properties)
+  - [Recovery Safety](#recovery-safety)
+- [FAQ](#faq)
 
-### 1.1 Problem Statement
+## Overview
 
-The current implementation requires rollup nodes (op-geth) to establish SP connection before producing blocks.
-This creates:
+### Problem Statement
+
+The current implementation requires rollup nodes (op-geth) to establish SP connection before producing blocks. This creates:
 
 - A hard dependency that blocks startup and testing without SP infrastructure
 - A single point of failure affecting all network rollups
 - Degraded availability during SP maintenance or outages
 
-### 1.2 Design Rationale
+### Design Rationale
 
 The Compose protocol architecture separates two concerns:
 
@@ -26,22 +54,23 @@ The Compose protocol architecture separates two concerns:
 
 This separation enables independent operation when coordination is unavailable.
 
-### 1.3 Specification Basis
+### Specification Basis
 
 The protocol specifications support independent local operation:
 
+> [!NOTE]
 > "Native Sequencers: one per rollup, who **builds L2 blocks at a self-chosen frequency**"
 > — Superblock Construction Protocol
 
+> [!NOTE]
 > "Rollups may **keep independent L2 block times**; only period boundaries are common."
 > — Superblock Construction Protocol
 
-The fault model states "SP must be live to guarantee termination" — this constraint applies to cross-chain transaction
-completion, not local block production.
+The fault model states "SP must be live to guarantee termination" — this constraint applies to cross-chain transaction completion, not local block production.
 
-## 2. Operating Modes
+## Operating Modes
 
-### 2.1 Mode Definitions
+### Mode Definitions
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -69,7 +98,7 @@ completion, not local block production.
 └────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Mode Transitions
+### Mode Transitions
 
 ```
                    ┌─────────────────┐
@@ -92,9 +121,9 @@ completion, not local block production.
 | Connected | Solo      | SP heartbeat timeout exceeded        |
 | Solo      | Connected | Valid `StartPeriod` received from SP |
 
-## 3. Startup Behavior
+## Startup Behavior
 
-### 3.1 Startup Sequence
+### Startup Sequence
 
 ```
                          Sequencer Start
@@ -131,7 +160,7 @@ completion, not local block production.
      └─────────────────┘               └─────────────────┘
 ```
 
-### 3.2 L1 Bootstrap
+### L1 Bootstrap
 
 On startup, the sequencer MUST query the L1 settlement contract for:
 
@@ -141,7 +170,7 @@ On startup, the sequencer MUST query the L1 settlement contract for:
 
 This establishes the base state regardless of SP availability.
 
-### 3.3 Period Derivation (Solo Mode)
+### Period Derivation (Solo Mode)
 
 When SP is unavailable, period and superblock values are derived deterministically:
 
@@ -156,24 +185,24 @@ func deriveTargetSuperblock(lastFinalizedSuperblock SuperblockNumber) Superblock
 }
 ```
 
-## 4. Runtime Behavior
+## Runtime Behavior
 
-### 4.1 Local Transaction Processing
+### Local Transaction Processing
 
 Local transactions MUST be processed in both modes. The sequencer:
 
 1. Accepts transactions into mempool
 2. Executes via EVM
 3. Produces blocks at configured frequency
-4. Emits block headers (Unsafe safety level in Solo Mode, see [Section 6](#6-block-safety))
+4. Emits block headers (Unsafe safety level in Solo Mode, see [Block Safety](#block-safety))
 
-### 4.2 Cross-Chain Transaction Handling
+### Cross-Chain Transaction Handling
 
 In Solo Mode, cross-chain transaction requests (XTRequest) MUST be rejected:
 
 ```go
 if mode == SoloMode {
-return ErrCrossChainUnavailable
+    return ErrCrossChainUnavailable
 }
 ```
 
@@ -183,7 +212,7 @@ Error response MUST clearly indicate:
 - Reason for rejection
 - Expected behavior when SP reconnects
 
-### 4.3 Active SCP Instance Handling
+### Active SCP Instance Handling
 
 If SP disconnects during an active SCP instance:
 
@@ -193,13 +222,13 @@ If SP disconnects during an active SCP instance:
 4. Re-enable local transaction processing
 5. Transition to Solo Mode
 
-## 5. Recovery Protocol
+## Recovery Protocol
 
-### 5.1 Recovery Trigger
+### Recovery Trigger
 
 Recovery initiates when the sequencer receives a valid `StartPeriod` message from SP while in Solo Mode.
 
-### 5.2 State Reconciliation
+### State Reconciliation
 
 The sequencer compares local derived state against SP-provided state:
 
@@ -208,7 +237,7 @@ Local State:  { periodID, targetSuperblock }
 SP State:     { StartPeriod.PeriodID, StartPeriod.SuperblockNumber }
 ```
 
-### 5.3 Recovery Scenarios
+### Recovery Scenarios
 
 **Scenario 1: State Match**
 
@@ -247,7 +276,7 @@ Action:  Solo blocks (101-102) orphaned
          Sync to SP state, continue
 ```
 
-### 5.4 Recovery Implementation
+### Recovery Implementation
 
 ```go
 func (s *Sequencer) onStartPeriod(msg StartPeriod) error {
@@ -270,9 +299,9 @@ func (s *Sequencer) onStartPeriod(msg StartPeriod) error {
 **Principle:** SP is authoritative. No complex reconciliation is required. Solo Mode blocks were never L1-finalized, so
 orphaning is safe.
 
-## 6. Block Safety
+## Block Safety
 
-### 6.1 Safety Levels
+### Safety Levels
 
 As defined in the [Settlement Layer](./settlement_layer.md#superblock-and-l2-block-safety-levels) specification:
 
@@ -284,7 +313,7 @@ As defined in the [Settlement Layer](./settlement_layer.md#superblock-and-l2-blo
 
 L2 blocks inherit the safety level of their containing superblock.
 
-### 6.2 Safety Levels by Mode
+### Safety Levels by Mode
 
 | Mode      | Unsafe | Validated | Finalized |
 |-----------|--------|-----------|-----------|
@@ -297,7 +326,7 @@ In Solo Mode, blocks cannot progress beyond **Unsafe** because:
 - No proof means blocks cannot reach **Validated**
 - Nothing published to L1 means no **Finalized** status
 
-### 6.3 Solo Mode Block Disposition
+### Solo Mode Block Disposition
 
 Blocks produced in Solo Mode:
 
@@ -307,7 +336,7 @@ Blocks produced in Solo Mode:
 - May be orphaned on SP reconnect (equivalent to chain reorganization)
 - Transactions return to mempool if orphaned
 
-## 7. Operational Limits
+## Operational Limits
 
 | Parameter                | Value              | Notes                 |
 |--------------------------|--------------------|-----------------------|
@@ -316,9 +345,9 @@ Blocks produced in Solo Mode:
 | Settlement               | Deferred           | Resumes on reconnect  |
 | Block Finality           | Unsafe only        | No L1 finalization    |
 
-## 8. Security Considerations
+## Security Considerations
 
-### 8.1 Safety Properties
+### Safety Properties
 
 Solo Mode maintains safety:
 
@@ -327,7 +356,7 @@ Solo Mode maintains safety:
 - L1 settlement contract enforces all finality guarantees
 - Orphaned blocks do not affect L1-finalized state
 
-### 8.2 Liveness Properties
+### Liveness Properties
 
 Solo Mode provides degraded liveness:
 
@@ -335,7 +364,7 @@ Solo Mode provides degraded liveness:
 - Cross-chain operations unavailable
 - Settlement deferred but not lost
 
-### 8.3 Recovery Safety
+### Recovery Safety
 
 On SP reconnect:
 
@@ -343,7 +372,7 @@ On SP reconnect:
 - Local divergence resolved by orphaning unfinalized blocks
 - No double-spend possible (L1 is source of truth)
 
-## 9. FAQ
+## FAQ
 
 **Q: Is Solo Mode safe?**
 
