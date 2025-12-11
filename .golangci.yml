@@ -140,9 +140,6 @@ linters:
             - pkg: math/rand$
               desc: Use math/rand/v2 instead
 
-    embeddedstructfieldcheck:
-      forbid-mutex: true
-
     errcheck:
       # Report about not checking of errors in type assertions
       check-type-assertions: true
