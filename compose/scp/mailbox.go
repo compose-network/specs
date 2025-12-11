@@ -9,6 +9,7 @@ import (
 // MailboxMessage carries the data exchanged between sequencers for mailbox fulfillment.
 type MailboxMessage struct {
 	MailboxMessageHeader
+
 	Data []byte
 }
 

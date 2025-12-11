@@ -60,7 +60,8 @@ func TestPublisher_StartPeriod_respectsExplicitTarget(t *testing.T) {
 	assert.Equal(t, compose.PeriodID(5), start.PeriodID)
 	assert.Equal(t, compose.SuperblockNumber(11), start.SuperblockNumber)
 
-	impl := pub.(*publisher)
+	impl, ok := pub.(*publisher)
+	require.True(t, ok)
 	assert.Equal(t, compose.SuperblockNumber(11), impl.TargetSuperblockNumber)
 }
 
@@ -76,7 +77,7 @@ func TestPublisher_StartPeriod_rejectsInitialTargetPastWindow(t *testing.T) {
 
 	err := pub.StartPeriod()
 	require.ErrorIs(t, err, ErrCannotStartPeriod)
-	assert.Len(t, messenger.startPeriods, 0)
+	assert.Empty(t, messenger.startPeriods)
 }
 
 func TestPublisher_StartPeriod_basic_broadcast_and_reset(t *testing.T) {
@@ -132,7 +133,7 @@ func TestPublisher_StartPeriod_no_window_constraint_when_disabled(t *testing.T) 
 		makeDefaultChainSet(),
 	)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		require.NoError(t, pub.StartPeriod())
 	}
 
@@ -273,7 +274,7 @@ func TestPublisher_StartInstance_populates_instance_fields(t *testing.T) {
 	assert.Equal(t, compose.PeriodID(1), inst.PeriodID)
 	assert.Equal(t, compose.SequenceNumber(1), inst.SequenceNumber)
 	assert.Equal(t, req, inst.XTRequest)
-	assert.Len(t, messenger.startInstances, 0)
+	assert.Empty(t, messenger.startInstances)
 }
 
 func TestPublisher_DecideInstance_clears_active_and_validates_active(t *testing.T) {
@@ -356,7 +357,8 @@ func TestPublisher_ProofTimeout_rolls_back_and_resets_target(t *testing.T) {
 	assert.Equal(t, finalized, rb.SuperblockNumber)
 	assert.Equal(t, compose.SuperblockHash{7}, rb.SuperblockHash)
 
-	impl := pub.(*publisher)
+	impl, ok := pub.(*publisher)
+	require.True(t, ok)
 	assert.Equal(t, finalized+1, impl.TargetSuperblockNumber)
 }
 
@@ -379,7 +381,7 @@ func TestPublisher_StartInstance_invalid_requests(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRequest)
 
 	// No broadcast occurred
-	assert.Len(t, m.startInstances, 0)
+	assert.Empty(t, m.startInstances)
 }
 
 func TestPublisher_ReceiveProof_aggregates_and_publishes(t *testing.T) {
@@ -398,8 +400,8 @@ func TestPublisher_ReceiveProof_aggregates_and_publishes(t *testing.T) {
 
 	// Receive proofs from both chains
 	pub.ReceiveProof(compose.PeriodID(11), compose.SuperblockNumber(6), []byte("proof-1"), compose.ChainID(1))
-	assert.Len(t, prover.calls, 0)
-	assert.Len(t, l1.published, 0)
+	assert.Empty(t, prover.calls)
+	assert.Empty(t, l1.published)
 
 	pub.ReceiveProof(compose.PeriodID(11), compose.SuperblockNumber(6), []byte("proof-2"), compose.ChainID(2))
 	require.Len(t, prover.calls, 1)
@@ -417,7 +419,8 @@ func TestPublisher_ReceiveProof_aggregates_and_publishes(t *testing.T) {
 	assert.Equal(t, []byte("network-proof"), l1.published[0].proof)
 
 	// Check map has been cleared out
-	impl := pub.(*publisher)
+	impl, ok := pub.(*publisher)
+	require.True(t, ok)
 	assert.Nil(t, impl.Proofs[compose.SuperblockNumber(6)])
 }
 
@@ -440,7 +443,7 @@ func TestPublisher_ReceiveProof_proverErrorTriggersRollback(t *testing.T) {
 	pub.ReceiveProof(compose.PeriodID(11), compose.SuperblockNumber(6), []byte("proof-2"), compose.ChainID(2))
 
 	// Check that didn't call publisher, and sent a rollback
-	assert.Len(t, l1.published, 0)
+	assert.Empty(t, l1.published)
 	require.Len(t, messenger.rollbacks, 1)
 
 	// Correct rollback msg
@@ -465,10 +468,11 @@ func TestPublisher_ReceiveProof_ignores_non_terminated_superblock(t *testing.T) 
 	superblock := compose.SuperblockNumber(5)
 	pub.ReceiveProof(compose.PeriodID(6), superblock, []byte("proof"), compose.ChainID(1))
 
-	assert.Len(t, prover.calls, 0)
-	assert.Len(t, l1.published, 0)
+	assert.Empty(t, prover.calls)
+	assert.Empty(t, l1.published)
 	// Check that proof wasn't stored
-	impl := pub.(*publisher)
+	impl, ok := pub.(*publisher)
+	require.True(t, ok)
 	_, exists := impl.Proofs[superblock]
 	assert.False(t, exists)
 }

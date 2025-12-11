@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/compose-network/specs/compose"
 	"github.com/rs/zerolog"
+
+	"github.com/compose-network/specs/compose"
 )
 
 var (
@@ -33,12 +34,21 @@ type Publisher interface {
 	// the publisher must roll back to the last finalized superblock and discard any active settlement pipeline.
 	ProofTimeout()
 	// ReceiveProof is called whenever a proof is received from a sequencer.
-	ReceiveProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte, chainID compose.ChainID)
+	ReceiveProof(
+		periodID compose.PeriodID,
+		superblockNumber compose.SuperblockNumber,
+		proof []byte,
+		chainID compose.ChainID,
+	)
 }
 
 type PublisherProver interface {
 	// RequestSuperblockProof requests a proof for the given superblock number. It's called after all proofs from sequencers have been received.
-	RequestSuperblockProof(superblockNumber compose.SuperblockNumber, lastSuperblockHash compose.SuperblockHash, proofs [][]byte) ([]byte, error)
+	RequestSuperblockProof(
+		superblockNumber compose.SuperblockNumber,
+		lastSuperblockHash compose.SuperblockHash,
+		proofs [][]byte,
+	) ([]byte, error)
 }
 
 type PublisherMessenger interface {
@@ -99,9 +109,8 @@ func NewPublisher(
 	logger zerolog.Logger,
 	chains map[compose.ChainID]struct{},
 ) (Publisher, error) {
-
 	if previousTargetSuperblockNumber < lastFinalizedSuperblockNumber {
-		return nil, fmt.Errorf("target superblock is less than the last finalized one")
+		return nil, errors.New("target superblock is less than the last finalized one")
 	}
 
 	return &publisher{
@@ -163,7 +172,12 @@ func (p *publisher) StartPeriod() error {
 }
 
 // ReceiveProof is called whenever a proof is received from a sequencer.
-func (p *publisher) ReceiveProof(periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte, chainID compose.ChainID) {
+func (p *publisher) ReceiveProof(
+	periodID compose.PeriodID,
+	superblockNumber compose.SuperblockNumber,
+	proof []byte,
+	chainID compose.ChainID,
+) {
 	p.mu.Lock()
 
 	// If the proof is for an old superblock, ignore it.
@@ -337,7 +351,7 @@ func (p *publisher) DecideInstance(instance compose.Instance) error {
 	return nil
 }
 
-// AdvanceSettledState is called when L1 emits a new settled state event
+// AdvanceSettledState is called when L1 emits a new settled state event.
 func (p *publisher) AdvanceSettledState(
 	superblockNumber compose.SuperblockNumber,
 	superblockHash compose.SuperblockHash,

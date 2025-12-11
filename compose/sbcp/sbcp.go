@@ -8,7 +8,7 @@ import (
 	"github.com/compose-network/specs/compose"
 )
 
-// GenerateInstanceID returns SHA256(periodID || seq || tx1 || tx2 || ... || txn)
+// GenerateInstanceID returns SHA256(periodID || seq || tx1 || tx2 || ... || txn).
 func GenerateInstanceID(
 	periodID compose.PeriodID,
 	seq compose.SequenceNumber,
@@ -27,7 +27,6 @@ func GenerateInstanceID(
 
 	// Append each transaction's chain ID, length and raw bytes
 	for _, req := range xtRequest.Transactions {
-
 		// Chain identifier
 		binary.BigEndian.PutUint64(b[:], uint64(req.ChainID))
 		buf.Write(b[:])

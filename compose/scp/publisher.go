@@ -2,6 +2,7 @@ package scp
 
 import (
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/compose-network/specs/compose"
@@ -48,7 +49,6 @@ func NewPublisherInstance(
 	network PublisherNetwork,
 	logger zerolog.Logger,
 ) (PublisherInstance, error) {
-
 	// Build runner
 	r := &publisherInstance{
 		mu:            sync.Mutex{},
@@ -151,10 +151,5 @@ func (r *publisherInstance) Timeout() error {
 }
 
 func (r *publisherInstance) chainInInstance(chainID compose.ChainID) bool {
-	for _, cid := range r.chains {
-		if cid == chainID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(r.chains, chainID)
 }

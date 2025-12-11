@@ -1,8 +1,9 @@
 package scp
 
 import (
-	"github.com/compose-network/specs/compose"
 	"testing"
+
+	"github.com/compose-network/specs/compose"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -23,6 +24,8 @@ func TestMailboxMessageHeader_Equal_and_IgnoresData(t *testing.T) {
 		MailboxMessageHeader: a.MailboxMessageHeader,
 		Data:                 []byte("payload-B"), // different data
 	}
+	// Verify Data fields are different but headers are equal
+	assert.NotEqual(t, a.Data, b.Data, "Data should be different for this test")
 	assert.True(
 		t,
 		a.MailboxMessageHeader.Equal(b.MailboxMessageHeader),
