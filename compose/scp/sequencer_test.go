@@ -1,26 +1,26 @@
 package scp
 
 import (
-	"github.com/compose-network/specs/compose"
 	"testing"
+
+	"github.com/compose-network/specs/compose"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func makeMsg(
-	src, dst compose.ChainID,
-	session compose.SessionID,
+	src compose.ChainID,
 	label string,
 	data []byte,
 ) MailboxMessage {
 	return MailboxMessage{
 		MailboxMessageHeader: MailboxMessageHeader{
 			SourceChainID: src,
-			DestChainID:   dst,
+			DestChainID:   compose.ChainID(1),
 			Sender:        compose.EthAddress{1},
 			Receiver:      compose.EthAddress{2},
-			SessionID:     session,
+			SessionID:     compose.SessionID(1),
 			Label:         label,
 		},
 		Data: append([]byte(nil), data...),
@@ -71,7 +71,7 @@ func TestSequencer_VoteTrueOnImmediateSuccess(t *testing.T) {
 
 func TestSequencer_ReadThenMailboxThenSuccess(t *testing.T) {
 	// First call returns a read request, second call success.
-	need := makeMsg(compose.ChainID(2), compose.ChainID(1), compose.SessionID(1), "X", []byte("d1"))
+	need := makeMsg(compose.ChainID(2), "X", []byte("d1"))
 	eng := &fakeExecutionEngine{
 		id:    1,
 		steps: []simulateResp{{read: &need.MailboxMessageHeader}, {read: nil}},
@@ -89,7 +89,7 @@ func TestSequencer_ReadThenMailboxThenSuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, seq.Run())
 
-	assert.Len(t, net.votes, 0)
+	assert.Empty(t, net.votes)
 
 	require.NoError(t, seq.ProcessMailboxMessage(need))
 
@@ -99,8 +99,8 @@ func TestSequencer_ReadThenMailboxThenSuccess(t *testing.T) {
 }
 
 func TestSequencer_MultipleReadsOutOfOrder(t *testing.T) {
-	a := makeMsg(compose.ChainID(2), compose.ChainID(1), compose.SessionID(1), "A", []byte("a"))
-	b := makeMsg(compose.ChainID(3), compose.ChainID(1), compose.SessionID(1), "B", []byte("b"))
+	a := makeMsg(compose.ChainID(2), "A", []byte("a"))
+	b := makeMsg(compose.ChainID(3), "B", []byte("b"))
 	// Simulation: need A, then need B, then success.
 	eng := &fakeExecutionEngine{
 		id: 1,
@@ -125,7 +125,7 @@ func TestSequencer_MultipleReadsOutOfOrder(t *testing.T) {
 
 	// Deliver B first (out of order) — should not trigger until A arrives.
 	require.NoError(t, seq.ProcessMailboxMessage(b))
-	assert.Len(t, net.votes, 0)
+	assert.Empty(t, net.votes)
 
 	// Now deliver A; engine will ask for B, which is already buffered; it should resimulate and vote true
 	require.NoError(t, seq.ProcessMailboxMessage(a))
@@ -137,7 +137,7 @@ func TestSequencer_MultipleReadsOutOfOrder(t *testing.T) {
 
 func TestSequencer_TimeoutBeforeVoteSendsFalse(t *testing.T) {
 	// Engine keeps asking for one read, so we remain simulating
-	need := makeMsg(compose.ChainID(2), compose.ChainID(1), compose.SessionID(1), "NEED", nil)
+	need := makeMsg(compose.ChainID(2), "NEED", nil)
 	eng := &fakeExecutionEngine{id: 1, steps: []simulateResp{{read: &need.MailboxMessageHeader}}}
 	net := &fakeSequencerNetwork{}
 	inst := compose.Instance{
@@ -167,7 +167,7 @@ func TestSequencer_TimeoutBeforeVoteSendsFalse(t *testing.T) {
 }
 
 func TestSequencer_SimulationErrorVotesFalse(t *testing.T) {
-	boom := simulateResp{read: nil, err: assertErr("boom")}
+	boom := simulateResp{read: nil, err: sentinelError("boom")}
 	eng := &fakeExecutionEngine{id: 1, steps: []simulateResp{boom}}
 	net := &fakeSequencerNetwork{}
 	inst := compose.Instance{
@@ -188,10 +188,10 @@ func TestSequencer_SimulationErrorVotesFalse(t *testing.T) {
 	}
 }
 
-// assertErr is a sentinel error implementing error equality by message.
-type assertErr string
+// sentinelError is a sentinel error implementing error equality by message.
+type sentinelError string
 
-func (e assertErr) Error() string { return string(e) }
+func (e sentinelError) Error() string { return string(e) }
 
 func TestSequencer_FiltersTransactionsByChainID(t *testing.T) {
 	eng := &fakeExecutionEngine{id: 42, steps: []simulateResp{}}
@@ -211,7 +211,7 @@ func TestSequencer_FiltersTransactionsByChainID(t *testing.T) {
 
 	// Simulate should have only received my chain's transactions
 	got := eng.lastReq.Transactions
-	var gotNames []string
+	gotNames := make([]string, 0, len(got))
 	for _, tr := range got {
 		gotNames = append(gotNames, string(tr))
 	}
@@ -233,5 +233,5 @@ func TestSequencer_NoTransactions_ReturnsErrNoTransactions(t *testing.T) {
 	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
 	require.ErrorIs(t, err, ErrNoTransactions)
 	assert.Nil(t, seq)
-	assert.Len(t, net.votes, 0)
+	assert.Empty(t, net.votes)
 }

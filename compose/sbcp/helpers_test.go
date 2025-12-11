@@ -61,7 +61,11 @@ func (m *fakePublisherMessenger) BroadcastStartInstance(inst compose.Instance) {
 	m.startInstances = append(m.startInstances, inst)
 }
 
-func (m *fakePublisherMessenger) BroadcastRollback(p compose.PeriodID, s compose.SuperblockNumber, h compose.SuperblockHash) {
+func (m *fakePublisherMessenger) BroadcastRollback(
+	p compose.PeriodID,
+	s compose.SuperblockNumber,
+	h compose.SuperblockHash,
+) {
 	m.rollbacks = append(m.rollbacks, struct {
 		PeriodID         compose.PeriodID
 		SuperblockNumber compose.SuperblockNumber
@@ -79,7 +83,11 @@ type fakePublisherProver struct {
 	err       error
 }
 
-func (p *fakePublisherProver) RequestSuperblockProof(superblockNumber compose.SuperblockNumber, hash compose.SuperblockHash, proofs [][]byte) ([]byte, error) {
+func (p *fakePublisherProver) RequestSuperblockProof(
+	superblockNumber compose.SuperblockNumber,
+	hash compose.SuperblockHash,
+	proofs [][]byte,
+) ([]byte, error) {
 	copied := make([][]byte, len(proofs))
 	for i, proof := range proofs {
 		copied[i] = append([]byte(nil), proof...)
@@ -118,7 +126,11 @@ type fakeSequencerProver struct {
 	nextProof []byte
 }
 
-func (p *fakeSequencerProver) RequestProofs(ctx context.Context, hdr *BlockHeader, sb compose.SuperblockNumber) ([]byte, error) {
+func (p *fakeSequencerProver) RequestProofs(
+	_ context.Context,
+	hdr *BlockHeader,
+	sb compose.SuperblockNumber,
+) ([]byte, error) {
 	p.calls = append(p.calls, struct {
 		hdr *BlockHeader
 		sb  compose.SuperblockNumber
@@ -135,12 +147,17 @@ type fakeSequencerMessenger struct {
 	}
 }
 
-func (m *fakeSequencerMessenger) ForwardRequest(ctx context.Context, request compose.XTRequest) error {
+func (m *fakeSequencerMessenger) ForwardRequest(_ context.Context, request compose.XTRequest) error {
 	m.requests = append(m.requests, request)
 	return nil
 }
 
-func (m *fakeSequencerMessenger) SendProof(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte) error {
+func (m *fakeSequencerMessenger) SendProof(
+	_ context.Context,
+	periodID compose.PeriodID,
+	superblockNumber compose.SuperblockNumber,
+	proof []byte,
+) error {
 	m.proofs = append(m.proofs, struct {
 		periodID         compose.PeriodID
 		superblockNumber compose.SuperblockNumber
