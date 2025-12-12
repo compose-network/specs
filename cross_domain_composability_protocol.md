@@ -406,10 +406,9 @@ procedure start(instance, erChain):
     send(erChain, StartInstance(instance))
 
 on Vote(chainID, vote):
-    if state != WAIT_NATIVE or chainID not in integratedChains:
+    # Validate state, chainID, and check for duplicate votes before processing
+    if state != WAIT_NATIVE or chainID not in integratedChains or chainID in votes:
         return
-    if chainID in votes:                     
-        return # duplicate vote
 
     votes[chainID] = vote
 
