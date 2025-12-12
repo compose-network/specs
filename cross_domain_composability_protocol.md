@@ -213,7 +213,7 @@ CONTRACT ExternalMailbox:
 > In the Solidity contract, the storage layout of the `chainIDsInbox`,
 > `chainIDsOutbox`, `inboxRootPerChain`, and `outboxRootPerChain` variables are
 > used in the settlement protocol, which perform `eth_getProof` calls to retrieve
-> the contract storage state. Thus, it's recommended that these varibles
+> the contract storage state. Thus, it's recommended that these variables
 > occupy the 1st, 2nd, 3rd and 4th slots, respectively.
 
 > [!TIP]
