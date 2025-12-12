@@ -191,11 +191,10 @@ func (ws *wsInstance) Run() error {
 
 		ws.logger.Info().Msg("Simulation failed, rejecting instance. Error: " + response.Err.Error())
 
-		ws.network.SendWSDecidedMessage(false)
 		ws.state = WSStateDone
 		ws.decisionState = compose.DecisionStateRejected
 		ws.mu.Unlock()
-
+		ws.network.SendWSDecidedMessage(false)
 		return fmt.Errorf("simulating sequencer failed: %w", response.Err)
 	}
 
@@ -299,19 +298,19 @@ func (ws *wsInstance) attemptERCall() {
 	// If it fails, send WSDecided as false and terminates
 	if err != nil {
 		ws.logger.Info().Err(err).Msg("ER call failed. Sending WSDecided as false.")
-		ws.network.SendWSDecidedMessage(false)
 		ws.state = WSStateDone
 		ws.decisionState = compose.DecisionStateRejected
 		ws.mu.Unlock()
+		ws.network.SendWSDecidedMessage(false)
 		return
 	}
 
 	// Else, sends a successful decision, and terminates
 	ws.logger.Info().Msg("ER call succeeded. Sending WSDecided as true.")
-	ws.network.SendWSDecidedMessage(true)
 	ws.state = WSStateDone
 	ws.decisionState = compose.DecisionStateAccepted
 	ws.mu.Unlock()
+	ws.network.SendWSDecidedMessage(true)
 }
 
 // consumeReceivedMailboxMessagesAndSimulate checks if any expected read mailbox messages have been received
@@ -416,11 +415,11 @@ func (ws *wsInstance) ProcessNativeDecidedMessage(decided bool) error {
 // If not already in waiting for ER response or done state, terminates as rejected and sends WSDecided(false) to SP.
 func (ws *wsInstance) Timeout() {
 	ws.mu.Lock()
-	defer ws.mu.Unlock()
 
 	if ws.state == WSStateWaitingERResponse || ws.state == WSStateDone {
 		ws.logger.Info().
 			Msg("Ignoring timeout because already waiting for ER or done")
+		ws.mu.Unlock()
 		return
 	}
 
@@ -429,5 +428,6 @@ func (ws *wsInstance) Timeout() {
 
 	ws.state = WSStateDone
 	ws.decisionState = compose.DecisionStateRejected
+	ws.mu.Unlock()
 	ws.network.SendWSDecidedMessage(false)
 }

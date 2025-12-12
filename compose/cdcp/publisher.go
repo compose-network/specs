@@ -141,13 +141,13 @@ func (r *publisherInstance) Run() {
 
 func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if r.state != PublisherStateWaitingVotes {
 		r.logger.Info().
 			Uint64("chain_id", uint64(sender)).
 			Bool("vote", vote).
 			Msg("Ignoring vote because not waiting anymore")
+		r.mu.Unlock()
 		return nil
 	}
 
@@ -157,6 +157,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 			Uint64("chain_id", uint64(sender)).
 			Bool("vote", vote).
 			Msg("Ignoring duplicated vote")
+		r.mu.Unlock()
 		return ErrDuplicatedVote
 	}
 
@@ -166,6 +167,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 			Uint64("chain_id", uint64(sender)).
 			Bool("vote", vote).
 			Msg("Ignoring vote from non-native chain")
+		r.mu.Unlock()
 		return ErrVoteSenderNotNativeChain
 	}
 
@@ -178,6 +180,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 			Msg("Received reject vote, rejecting instance")
 		r.decisionState = compose.DecisionStateRejected
 		r.state = PublisherStateDone
+		r.mu.Unlock()
 		r.network.SendDecided(r.instance.ID, false)
 		r.network.SendNativeDecided(r.instance.ID, false)
 		return nil
@@ -188,10 +191,12 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 		r.logger.Info().
 			Msg("All votes(true) received, sending native decided as true")
 		r.state = PublisherStateWaitingWSDecided
+		r.mu.Unlock()
 		r.network.SendNativeDecided(r.instance.ID, true)
 		return nil
 	}
 
+	r.mu.Unlock()
 	return nil
 }
 
@@ -199,7 +204,6 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 // If decision is false, it can already terminate the instance even it has not yet received all native votes.
 func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bool) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if r.wsDecision != nil {
 		r.logger.Error().
@@ -207,6 +211,7 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 			Bool("ws_decided", decision).
 			Bool("previous_ws_decided", *r.wsDecision).
 			Msg("Duplicated WSDecided")
+		r.mu.Unlock()
 		return ErrDuplicatedWSDecided
 	}
 
@@ -215,6 +220,7 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 			Uint64("chain_id", uint64(sender)).
 			Bool("ws_decided", decision).
 			Msg("Ignoring WSDecided because already done")
+		r.mu.Unlock()
 		return nil
 	}
 
@@ -226,6 +232,7 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 			Uint64("chain_id", uint64(sender)).
 			Bool("ws_decided", decision).
 			Msg("WSDecided true received, but still waiting for votes. Impossible protocol state.")
+		r.mu.Unlock()
 		return ErrInvalidStateForWSDecided
 	}
 
@@ -235,6 +242,7 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 			Uint64("chain_id", uint64(sender)).
 			Bool("ws_decided", decision).
 			Msg("WSDecided received from non ER chain")
+		r.mu.Unlock()
 		return ErrNotERChain
 	}
 
@@ -249,6 +257,7 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 			Msg("Received successful WSDecided, accepting and terminating instance")
 		r.state = PublisherStateDone
 		r.decisionState = compose.DecisionStateAccepted
+		r.mu.Unlock()
 		r.network.SendDecided(r.instance.ID, true)
 		return nil
 	}
@@ -261,18 +270,19 @@ func (r *publisherInstance) ProcessWSDecided(sender compose.ChainID, decision bo
 
 	r.state = PublisherStateDone
 	r.decisionState = compose.DecisionStateRejected
+	r.mu.Unlock()
 	r.network.SendDecided(r.instance.ID, false)
 	return nil
 }
 
 func (r *publisherInstance) Timeout() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	// If state is waiting for WS or Done, it can't time out
 	if r.state != PublisherStateWaitingVotes {
 		r.logger.Info().
 			Msg("Ignoring timeout because not waiting for native votes anymore")
+		r.mu.Unlock()
 		return nil
 	}
 
@@ -281,6 +291,7 @@ func (r *publisherInstance) Timeout() error {
 		Msg("Instance timed out, rejecting")
 	r.decisionState = compose.DecisionStateRejected
 	r.state = PublisherStateDone
+	r.mu.Unlock()
 	r.network.SendDecided(r.instance.ID, false)
 	r.network.SendNativeDecided(r.instance.ID, false)
 	return nil
