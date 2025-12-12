@@ -4,7 +4,7 @@ Feature: Sequencer Start Instance
   that belong to its own chain for simulation.
   In case there are no transactions for its own chain, the sequencer should reject the instance immediately
   as it shouldn't have received the message and this consists of an invalid protocol state.
-  After startup, the sequencer should immediately start simulating the transactions for the instance.
+  After instance start, the sequencer should immediately start simulating the transactions for the instance.
 
   Background:
     Given there is a chain "1" with sequencer "A"

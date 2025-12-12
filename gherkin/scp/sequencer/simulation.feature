@@ -1,5 +1,5 @@
-Feature: Sequencer Simulation
-  After the startup, the sequencer should immediately start the simulation process.
+Feature: Sequencer Simulation And Mailbox Population
+  After instance start, the sequencer should immediately start the simulation process.
   The simulation should return a success or an error, as well as the written mailbox messages.
   Any new written mailbox message should be forwarded to the destination sequencer.
   In case the result is a success, the sequencer should vote true.
@@ -32,6 +32,7 @@ Feature: Sequencer Simulation
       | instance_id | 0x1    |
       | chain_id    | 1      |
       | vote        | <vote> |
+    And no additional MailboxMessage should be forwarded
 
     Examples:
       | result                                  | vote  |
@@ -109,7 +110,7 @@ Feature: Sequencer Simulation
         1: [tx1]
         2: [tx2]
       """
-    And sequencer "A" has already forwarded a mailbox message with:
+    And sequencer "A" forwards a mailbox message with:
       | field             | value      |
       | source_chain      | 1          |
       | destination_chain | 2          |
@@ -146,6 +147,6 @@ Feature: Sequencer Simulation
     And <simulation_effect>
 
     Examples:
-      | expected_state     | storage_result                                                                                                 | simulation_effect                               |
-      | has not stored     | the message is appended to the pending mailbox queue for instance "0x1"                                      | sequencer "A" should not start a new simulation |
+      | expected_state     | storage_result                                                                                                                           | simulation_effect                               |
+      | has not stored     | the message is appended to the pending mailbox queue for instance "0x1"                                                                  | sequencer "A" should not start a new simulation |
       | has already stored | the message is removed from the expected set and pending queue, then inserted into the inbox and a mailbox.putInbox transaction is added | sequencer "A" should start a new simulation     |

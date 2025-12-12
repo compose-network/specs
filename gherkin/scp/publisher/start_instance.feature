@@ -4,15 +4,14 @@ Feature: Publisher Start Instance
   appears in the XTRequest and starts a local timeout for the decision phase.
 
   Background:
-    Given there is a shared publisher "SP"
-    And there is a chain "1" with sequencer "A"
+    Given there is a chain "1" with sequencer "A"
     And there is a chain "2" with sequencer "B"
     And there is a chain "3" with sequencer "C"
     And there is a chain "4" with sequencer "D"
 
   @publisher @scp @start-instance
   Scenario: Broadcasts StartInstance to all participating sequencers
-    When the shared publisher "SP" starts an instance:
+    When SP starts an instance:
       """
       instance_id: 0x1
       period_id: 7
@@ -36,7 +35,7 @@ Feature: Publisher Start Instance
 
   @publisher @scp @start-instance
   Scenario: Notifies only chains referenced in the XTRequest
-    When the shared publisher "SP" starts an instance:
+    When SP starts an instance:
       """
       instance_id: 0x2
       period_id: 8
