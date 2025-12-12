@@ -232,6 +232,8 @@ func (ws *wsInstance) Run() error {
 	return nil
 }
 
+// sendWriteMessages sends the given mailbox messages if they haven't been sent before.
+// Should be called with lock held.
 func (ws *wsInstance) sendWriteMessages(messages []scp.MailboxMessage) {
 	for _, msg := range messages {
 		// Check if belongs to cache
@@ -283,11 +285,14 @@ func (ws *wsInstance) attemptERCall() {
 	// If native decided as true, calls ER.
 	// Call it without lock, to free-up state.
 	ws.state = WSStateWaitingERResponse
+	putInboxMessages := append([]scp.MailboxMessage(nil), ws.putInboxMessages...)
+	putOutboxMessages := append([]scp.MailboxMessage(nil), ws.writePrePopulationMessages...)
+	txs := compose.CloneByteSlices(ws.txs)
 	ws.mu.Unlock()
 	err := ws.erClient.SubmitTransaction(SafeExecuteArguments{
-		PutInboxMessages:  append([]scp.MailboxMessage(nil), ws.putInboxMessages...),
-		PutOutboxMessages: append([]scp.MailboxMessage(nil), ws.writePrePopulationMessages...),
-		Transactions:      ws.txs,
+		PutInboxMessages:  putInboxMessages,
+		PutOutboxMessages: putOutboxMessages,
+		Transactions:      txs,
 	})
 	ws.mu.Lock()
 
@@ -301,8 +306,8 @@ func (ws *wsInstance) attemptERCall() {
 		return
 	}
 
-	// Else, sends successful decision, and terminates
-	ws.logger.Info().Err(err).Msg("ER call succeeded. Sending WSDecided as true.")
+	// Else, sends a successful decision, and terminates
+	ws.logger.Info().Msg("ER call succeeded. Sending WSDecided as true.")
 	ws.network.SendWSDecidedMessage(true)
 	ws.state = WSStateDone
 	ws.decisionState = compose.DecisionStateAccepted
@@ -322,7 +327,7 @@ func (ws *wsInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 		// Look if it exists in received messages
 		for receivedMsgIdx, receivedMsg := range ws.pendingMessages {
 			if receivedMsg.MailboxMessageHeader.Equal(expectedMsg) {
-				// If found, add to mailboxOps
+				// If found, add to putInboxMessages
 				ws.putInboxMessages = append(ws.putInboxMessages, receivedMsg)
 				// Remove from lists
 				ws.expectedReadRequests = append(
@@ -388,7 +393,7 @@ func (ws *wsInstance) ProcessNativeDecidedMessage(decided bool) error {
 	}
 
 	if ws.state == WSStateDone {
-		ws.logger.Info().
+		ws.logger.Warn().
 			Bool("received_native_decided", decided).
 			Str("stored_decision", ws.decisionState.String()).
 			Msg("Ignoring native decided message because already done")

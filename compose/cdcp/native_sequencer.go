@@ -13,7 +13,7 @@ type NativeSequencerInstance interface {
 }
 
 // NewNativeSequencerInstance returns a new native-sequencer CDCP instance.
-// It has the exact same behaviour as in SCP, and thus its constructor can used.
+// It has the exact same behavior as in SCP, and thus its constructor can be used.
 func NewNativeSequencerInstance(
 	instance compose.Instance,
 	execution scp.ExecutionEngine,

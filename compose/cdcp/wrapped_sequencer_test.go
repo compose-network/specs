@@ -45,7 +45,7 @@ func TestWrappedSequencer_NewInstanceValidatesTransactions(t *testing.T) {
 		compose.StateRoot{},
 		testLogger(),
 	)
-	// Ensure an error is returned chain has no transaction.
+	// Ensure an error is returned when chain has no transaction.
 	require.ErrorIs(t, err, ErrNoTransactions)
 }
 
@@ -393,7 +393,7 @@ func TestWrappedSequencer_ProcessMailboxMessageIgnoredWhenNotSimulating(t *testi
 	require.Equal(t, 1, len(exec.requests))
 
 	msg := makeMailboxMsg(1, 4, "late", []byte("payload"))
-	// ProcessMailboxMessage don't trigger any simulation requests.
+	// ProcessMailboxMessage doesn't trigger any simulation requests.
 	require.NoError(t, ws.ProcessMailboxMessage(msg))
 	assert.Equal(t, 1, len(exec.requests))
 }

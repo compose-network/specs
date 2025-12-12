@@ -18,7 +18,7 @@ func TestPublisher_NewInstanceValidatesChains(t *testing.T) {
 		chainReq(2, []byte("b")),
 	)
 	_, err = NewPublisherInstance(instance, &fakePublisherNetwork{}, compose.ChainID(3), testLogger())
-	// creation errors if the ER chain has no transaction.
+	// creation errors if the ER chain has no transactions.
 	require.ErrorIs(t, err, ErrERNotFound)
 }
 
@@ -40,7 +40,7 @@ func TestPublisher_AllNativeVotesTrueThenWSDecidedTrue(t *testing.T) {
 	// Processed votes
 	require.NoError(t, pub.ProcessVote(compose.ChainID(1), true))
 	require.NoError(t, pub.ProcessVote(compose.ChainID(2), true))
-	// NativeDecided shoudl be sent with result true
+	// NativeDecided should be sent with result true
 	assert.Len(t, net.nativeDecided, 1)
 	assert.True(t, net.nativeDecided[0].Result)
 	assert.Equal(t, compose.DecisionStatePending, pub.DecisionState())

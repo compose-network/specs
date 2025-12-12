@@ -70,13 +70,9 @@ It requires the following implementation dependencies:
 
 And provides the following methods:
 - `DecisionState()`: returns the WS decision state.
-- `Run()`: executes simulations against the VM snapshot:
+- `Run()`: calls simulations against the VM snapshot:
   - Success: caches written mailbox messages, transitions to `WaitingNativeDecided`, and waits for publisher's `NativeDecided` message.
   - Error: transitions to `Done` and reports the error.
-- `Simulate(args)`: simulates `safe_execute` against the given snapshot and returns the result.
-  - `ReadMiss`: tracks the required mailbox header and keeps waiting for native messages, re-simulating once satisfied.
-  - `WriteMiss`: stages the missing outbox message into `PutOutboxMessages` and re-simulates.
-  - Error: sends `WSDecided(false)` and terminates.
 - `ProcessMailboxMessage(msg)`: buffers incoming mailbox messages for simulation; when a pending read is satisfied it moves the message into `PutInboxMessages` and re-runs the simulation.
 - `ProcessNativeDecidedMessage(decided)`: deduplicates the publisher’s native decision and, if `true`, triggers the external rollup submission; `false` cancels execution.
 - `Timeout()`: while not already waiting for the ER response, aborts and reports `WSDecided(false)`.

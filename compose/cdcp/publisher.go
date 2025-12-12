@@ -71,7 +71,7 @@ func NewPublisherInstance(
 	logger zerolog.Logger,
 ) (PublisherInstance, error) {
 
-	nativeChains, err := validateChains(instance, erChainID)
+	nativeChains, err := validateNativeChains(instance, erChainID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func NewPublisherInstance(
 }
 
 // validateChains validates the instance and returns the set of native chains.
-func validateChains(instance compose.Instance, erChainID compose.ChainID) (nativeChains map[compose.ChainID]struct{}, err error) {
+func validateNativeChains(instance compose.Instance, erChainID compose.ChainID) (nativeChains map[compose.ChainID]struct{}, err error) {
 
 	// Ensure there are at least 2 chains
 	instanceChains := instance.Chains()
@@ -133,7 +133,7 @@ func (r *publisherInstance) Instance() compose.Instance {
 	return r.instance
 }
 
-// Run performs launches the instance by sending a message to all participants.
+// Run launches the instance by sending a message to all participants.
 // Call this once after creation.
 func (r *publisherInstance) Run() {
 	r.network.SendStartInstance(r.instance)
@@ -162,7 +162,7 @@ func (r *publisherInstance) ProcessVote(sender compose.ChainID, vote bool) error
 
 	// Ensure it's a native chain
 	if _, ok := r.nativeChains[sender]; !ok {
-		r.logger.Info().
+		r.logger.Warn().
 			Uint64("chain_id", uint64(sender)).
 			Bool("vote", vote).
 			Msg("Ignoring vote from non-native chain")
