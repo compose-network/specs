@@ -85,7 +85,7 @@ Feature: Sequencer Decision
       """
 
   @sequencer @scp @decision
-  Scenario: Finalizes instance when decision is received from SP
+  Scenario Outline: Finalizes instance when decision is received from SP
     Given sequencer "A" receives StartInstance:
       """
       instance_id: 0x1
