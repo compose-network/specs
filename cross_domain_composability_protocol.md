@@ -295,15 +295,15 @@ sequenceDiagram
 The Wrapped Sequencer (WS) has the following rules:
 1. (Same as IS) Once it receives the `StartInstance` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
 2. (Same as IS) Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
-3. Whenever a `externalMailbox.Write` operation is intercepted and fails:
+3. Whenever a `ExternalMailbox.Write` operation is intercepted and fails:
   - It sends a `Mailbox` message to the counterparty chain sequencer.
-  - It creates a `externalMailbox.putOutbox` transaction and adds it locally to the transaction list, placing it before the main transaction.
+  - It creates a `ExternalMailbox.putOutbox` transaction and adds it locally to the transaction list, placing it before the main transaction.
   - Then, it re-starts the transaction simulation going back to step 2.
 4. (Same as IS) Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
 5. (Same as IS) Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox' transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
 6. In case the transaction simulation is successful, it waits for a `IntegratedDecided` message from the SP.
 7. In case there's a timeout (before a `WSDecided` message has been sent) or if the transaction simulation fails but not due to a mailbox write or read error, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
-8. If a `IntegratedDecided(0)` message is received from the SP, it removes its transaction (and any created `externalMailbox`) and terminates.
+8. If a `IntegratedDecided(0)` message is received from the SP, it removes its transaction (and any created `ExternalMailbox`) and terminates.
 9. If a `IntegratedDecided(1)` message is received from the SP and its local transaction simulation is successful, it stops the timer (as it no longer will be used) and sends a special transaction to the ER, which populates the mailbox and executes the transaction atomically.
 10. If the ER transaction fails, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
 11. If the ER transaction is successful, it sends a `WSDecided(1)` message to the SP, indicating success and terminates.
