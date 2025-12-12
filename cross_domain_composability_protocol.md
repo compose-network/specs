@@ -248,7 +248,7 @@ sequenceDiagram
     participant WS/Other ISs
 
     SP->>IS: StartInstance
-    Note over IS,WS/Other ISs: Exchange Mailbox Mesages
+    Note over IS,WS/Other ISs: Exchange Mailbox Messages
     IS->>WS/Other ISs: Mailbox Message
     WS/Other ISs->>IS: Mailbox Message
     
@@ -430,6 +430,7 @@ on WSDecided(from, decision):
     if decision == 1 and state == WAIT_NATIVE:
         # should not happen as WS can only vote after it receives a IntegratedDecided
         error("WSDecided(1) before IntegratedDecided")
+        return
 
     broadcast(integratedChains, Decided(decision))
     state = DONE
@@ -683,13 +684,13 @@ procedure WS_ZK_Program(input: Input) -> Output:
     outbox_len = input.mailbox_outbox_chains_len.storageProof[0].value
     inbox_chains = [sp.value for sp in input.mailbox_inbox_chains.storageProof]
     outbox_chains = [sp.value for sp in input.mailbox_outbox_chains.storageProof]
-    ensure inbox_len = len(inbox_chains)
-    ensure outbox_len = len(outbox_chains)
+    ensure inbox_len == len(inbox_chains)
+    ensure outbox_len == len(outbox_chains)
     
     inbox_roots = [sp.value for sp in input.mailbox_inbox_roots.storageProof]
     outbox_roots = [sp.value for sp in input.mailbox_outbox_roots.storageProof]
-    ensure inbox_len = len(inbox_roots)
-    ensure outbox_len = len(outbox_roots)
+    ensure inbox_len == len(inbox_roots)
+    ensure outbox_len == len(outbox_roots)
     
     mailbox_root = compute_mailbox_root(inbox_chains, inbox_roots, outbox_chains, outbox_roots)
     
