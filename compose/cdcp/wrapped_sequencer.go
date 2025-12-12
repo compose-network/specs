@@ -168,9 +168,9 @@ func (ws *wsInstance) DecisionState() compose.DecisionState {
 }
 
 // Run executes calls to the mailbox-aware simulation.
-// If simulation succeeds, it sends Vote(true) to the SP and set state to waiting for decided.
+// If simulation succeeds, it sets state to waiting for native decided.
 // If simulation fails due to read miss, it adds the expected read message and looks for new reads to insert.
-// If simulation fails for other reasons, it sends Vote(false) and terminates.
+// If simulation fails for other reasons, it sends a WSDecided message with false and terminates.
 func (ws *wsInstance) Run() error {
 	ws.mu.Lock()
 	if ws.state != WSStateSimulating {
