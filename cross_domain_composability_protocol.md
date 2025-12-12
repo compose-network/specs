@@ -5,12 +5,12 @@ The atomicity property refers to the guarantee that either both rollups successf
 
 ## Table of Contents
 
-- [Native vs. External Rollups](#native-vs-external-rollups)
+- [Integrated vs. External Rollups](#integrated-vs-external-rollups)
 - [System Model](#system-model)
 - [Informal Protocol Intuition](#informal-protocol-intuition)
 - [External Mailbox](#external-mailbox)
 - [Protocol](#protocol)
-  - [Native Sequencer (NS)](#native-sequencer-ns)
+  - [Integrated Sequencer (IS)](#integrated-sequencer-ns)
   - [Shared Publisher (SP)](#shared-publisher-sp)
   - [Wrapped Sequencer (WS)](#wrapped-sequencer-ws)
   - [Messages](#messages)
@@ -21,10 +21,10 @@ The atomicity property refers to the guarantee that either both rollups successf
   - [WS ZK Program](#ws-zk-program)
   - [SP Program Modifications](#sp-program-modifications)
 
-## Native vs. External Rollups
+## Integrated vs. External Rollups
 
 To differentiate between types of rollups, we use the following terminology:
-- **Native Rollups**: Rollups that are part of the Compose network.
+- **Integrated Rollups**: Rollups that are part of the Compose network.
 - **External Rollups**: Rollups that are not part of the Compose network.
 
 ## System Model
@@ -32,11 +32,11 @@ To differentiate between types of rollups, we use the following terminology:
 The system encompasses 5 main components:
 1. **User**: An entity that requests a cross-domain transaction execution.
 2. **Shared Publisher (SP)**: The coordinator of the network that leads the execution of the protocol.
-3. **Native Rollup Sequencers (NSs)**: Sequencers for the participating native rollups.
+3. **Integrated Rollup Sequencers (ISs)**: Sequencers for the participating integrated rollups.
 4. **External Rollup Client (ER)**: A client from the external rollup that accepts transactions to be included in a block.
 5. **Wrapped Sequencer (WS)**: An entity that represents the participating external rollup sequencer in the Compose network, having access to the state and execution results of the external rollup.
 
-The SP, NSs, and WS are part of the Compose network and are expected to have direct communication channels between them.
+The SP, ISs, and WS are part of the Compose network and are expected to have direct communication channels between them.
 It's assumed that a user request is eventually delivered to the SP who will have the responsibility to initiate the protocol execution.
 The WS is expected to have a communication channel with the ER.
 
@@ -51,8 +51,8 @@ These bounds are used to derive per-instance timeouts for ER inclusion.
 ## Informal Protocol Intuition
 
 The WS will behave as it's the actual sequencer of the ER.
-It will receive mailbox messages from other NSs, simulate its transactions,
-produce outbox mailbox messages, and send them to the NSs. 
+It will receive mailbox messages from other ISs, simulate its transactions,
+produce outbox mailbox messages, and send them to the ISs. 
 However, once the simulation phase is done,
 the WS will need to send all this information to the ER, for the transaction
 to be really included in a block.
@@ -60,7 +60,7 @@ to be really included in a block.
 Here is the delicate part of the protocol. 
 We can't control the ER decision to include or not a valid transaction.
 Still, the ER execution must match exactly the WS's one,
-otherwise NSs would have executed on top of different messages
+otherwise ISs would have executed on top of different messages
 and would also produce different messages.
 More concretely:
 1. The ER must "receive" the same inbox messages the WS received.
@@ -82,13 +82,13 @@ the ER's generated messages to match the WS's ones.
 sequenceDiagram
     autonumber
 
-    participant SP/NSs
+    participant SP/ISs
     participant WS
     participant ER
 
     Note left of WS: simulation phase
-    WS->>SP/NSs: Outbox Msgs
-    SP/NSs->>WS: Inbox Msgs + Everyone can proceed
+    WS->>SP/ISs: Outbox Msgs
+    SP/ISs->>WS: Inbox Msgs + Everyone can proceed
     
     WS->>ER: Tx + inbox and outbox msgs
     
@@ -101,7 +101,7 @@ sequenceDiagram
 
 ## External Mailbox
 
-Native rollups are assumed to have the standard [`Mailbox`](./synchronous_composability_protocol.md) contract deployed.
+Integrated rollups are assumed to have the standard [`Mailbox`](./synchronous_composability_protocol.md) contract deployed.
 External rollups will have a slightly modified version of the `Mailbox` contract.
 
 In the `ExternalMailbox`, all messages are pre-populated by the WS:
@@ -221,16 +221,16 @@ CONTRACT ExternalMailbox:
 
 ## Protocol
 
-Similarly to the SCP protocol, the SP initiates the execution by sending a start message, `StartInstance`, to NSs and WS.
+Similarly to the SCP protocol, the SP initiates the execution by sending a start message, `StartInstance`, to ISs and WS.
 
 ---
 
-### Native Sequencer (NS)
+### Integrated Sequencer (IS)
 
-Then, each NS runs **exactly** the protocol rules of the [SCP protocol](./synchronous_composability_protocol.md). Namely:
+Then, each IS runs **exactly** the protocol rules of the [SCP protocol](./synchronous_composability_protocol.md). Namely:
 1. Once it receives the `StartInstance` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
 2. Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
-3. Once a `mailbox.Write` operation is intercepted, it sends a `Mailbox` message to the counterparty chain sequencer (either the WS or another NS).
+3. Once a `mailbox.Write` operation is intercepted, it sends a `Mailbox` message to the counterparty chain sequencer (either the WS or another IS).
 4. Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
 5. Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox' transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
 6. In case the transaction simulation is successful, it stops the timer (as it no longer will be used) and sends a `Vote(1)` message to the SP, indicating its willingness to include the transaction.
@@ -238,54 +238,54 @@ Then, each NS runs **exactly** the protocol rules of the [SCP protocol](./synchr
 8. In case a `Decided(1)` message is received from the SP, it adds all `mailbox.putInbox' transactions created and the main transaction to the block, and terminates.
 9. In case a `Decided(0)` message is received from the SP, it removes all `mailbox.putInbox' transactions created and the main transaction from the block, reverting to the previous state, and terminates.
 
-**Sequence Diagram - NS View**
+**Sequence Diagram - IS View**
 ```mermaid
 sequenceDiagram
     autonumber
 
     participant SP
-    participant NS
-    participant WS/Other NSs
+    participant IS
+    participant WS/Other ISs
 
-    SP->>NS: StartInstance
-    Note over NS,WS/Other NSs: Exchange Mailbox Mesages
-    NS->>WS/Other NSs: Mailbox Message
-    WS/Other NSs->>NS: Mailbox Message
+    SP->>IS: StartInstance
+    Note over IS,WS/Other ISs: Exchange Mailbox Mesages
+    IS->>WS/Other ISs: Mailbox Message
+    WS/Other ISs->>IS: Mailbox Message
     
-    NS->>SP: Vote
-    SP->>NS: Decision
+    IS->>SP: Vote
+    SP->>IS: Decision
 ```
 
 ---
 ### Shared Publisher (SP)
 
 The Shared Publisher (SP) runs a slightly modified version of the SCP protocol:
-1. It sends a `StartInstance` message to the appropriate sequencers, starts a timer, and waits for NSs' `Vote` messages.
-2. If a timeout occurs or if a `Vote(0)` message is received (indicates a failure), it sends a `Decided(0)` message to the NSs and a `NativeDecided(0)` message to the WS, and terminates.
-3. If it receives a `Vote(1)` message from all NSs, it stops the timer (as it not longer will be used) and sends a `NativeDecided(1)` message to the WS, indicating that the NSs are willing to proceed.
-4. Once a `WSDecided(b)` message is received from the WS, it sends a `Decided(b)` message indicating the result to the NSs, and terminates.
+1. It sends a `StartInstance` message to the appropriate sequencers, starts a timer, and waits for ISs' `Vote` messages.
+2. If a timeout occurs or if a `Vote(0)` message is received (indicates a failure), it sends a `Decided(0)` message to the ISs and a `IntegratedDecided(0)` message to the WS, and terminates.
+3. If it receives a `Vote(1)` message from all ISs, it stops the timer (as it not longer will be used) and sends a `IntegratedDecided(1)` message to the WS, indicating that the ISs are willing to proceed.
+4. Once a `WSDecided(b)` message is received from the WS, it sends a `Decided(b)` message indicating the result to the ISs, and terminates.
 
-Note that, from the above, the SP works as a middle layer between the NSs and WS.
-It indicates the viability results from the NSs to the WS, who is then allowed to communicate with the external rollup for including its transaction.
-Once the WS receives a response, it indicates the result to the SP, who transmits the result back to the NSs.
+Note that, from the above, the SP works as a middle layer between the ISs and WS.
+It indicates the viability results from the ISs to the WS, who is then allowed to communicate with the external rollup for including its transaction.
+Once the WS receives a response, it indicates the result to the SP, who transmits the result back to the ISs.
 
 **Sequence Diagram - SP View**
 ```mermaid
 sequenceDiagram
     autonumber
 
-    participant NSs
+    participant ISs
     participant SP
     participant WS
 
     par Start
-    SP->>NSs: StartInstance
+    SP->>ISs: StartInstance
     SP->>WS: StartInstance
     end
-    NSs->>SP: Votes
-    SP->>WS: NativeDecided
+    ISs->>SP: Votes
+    SP->>WS: IntegratedDecided
     WS->>SP: WSDecided
-    SP->>NSs: Decided
+    SP->>ISs: Decided
 ```
 
 ---
@@ -293,18 +293,18 @@ sequenceDiagram
 ### Wrapped Sequencer (WS)
 
 The Wrapped Sequencer (WS) has the following rules:
-1. (Same as NS) Once it receives the `StartInstance` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
-2. (Same as NS) Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
+1. (Same as IS) Once it receives the `StartInstance` message from the SP, it starts a timer and selects the transactions from the `xD_transactions` list that are meant for its chain.
+2. (Same as IS) Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
 3. Whenever a `externalMailbox.Write` operation is intercepted and fails:
   - It sends a `Mailbox` message to the counterparty chain sequencer.
   - It creates a `externalMailbox.putOutbox` transaction and adds it locally to the transaction list, placing it before the main transaction.
   - Then, it re-starts the transaction simulation going back to step 2.
-4. (Same as NS) Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
-5. (Same as NS) Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox' transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
-6. In case the transaction simulation is successful, it waits for a `NativeDecided` message from the SP.
+4. (Same as IS) Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
+5. (Same as IS) Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox' transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
+6. In case the transaction simulation is successful, it waits for a `IntegratedDecided` message from the SP.
 7. In case there's a timeout (before a `WSDecided` message has been sent) or if the transaction simulation fails but not due to a mailbox write or read error, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
-8. If a `NativeDecided(0)` message is received from the SP, it removes its transaction (and any created `externalMailbox`) and terminates.
-9. If a `NativeDecided(1)` message is received from the SP and its local transaction simulation is successful, it stops the timer (as it no longer will be used) and sends a special transaction to the ER, which populates the mailbox and executes the transaction atomically.
+8. If a `IntegratedDecided(0)` message is received from the SP, it removes its transaction (and any created `externalMailbox`) and terminates.
+9. If a `IntegratedDecided(1)` message is received from the SP and its local transaction simulation is successful, it stops the timer (as it no longer will be used) and sends a special transaction to the ER, which populates the mailbox and executes the transaction atomically.
 10. If the ER transaction fails, it sends a `WSDecided(0)` message to the SP, indicating failure and terminates.
 11. If the ER transaction is successful, it sends a `WSDecided(1)` message to the SP, indicating success and terminates.
 
@@ -339,35 +339,35 @@ sequenceDiagram
 
     participant User
     participant SP
-    participant NS
+    participant IS
     participant WS
     participant ER
 
     User->>SP: User op
 
-    SP->>NS: StartInstance
-    NS->>WS: StartInstance
+    SP->>IS: StartInstance
+    IS->>WS: StartInstance
 
     Note right of WS:3.5) "write" trigger:
-    Note right of WS:i) send to destination NS
+    Note right of WS:i) send to destination IS
     Note right of WS:ii) add externalMailbox.putOutbox on top and re-execute
 
-    WS->>NS: Mailbox Msgs
+    WS->>IS: Mailbox Msgs
 
-    NS->>WS: Mailbox Msgs
+    IS->>WS: Mailbox Msgs
     Note right of WS:5) Add externalMailbox.putInbox on top and re-execute
 
 
-    NS->>SP: Vote
+    IS->>SP: Vote
 
-    SP->>WS: NativeDecided
+    SP->>WS: IntegratedDecided
 
     WS->>ER: Submit tx + msgs
     ER->>WS: Inclusion confirmation (or rejection)
 
     WS->>SP: WSDecided
 
-    SP->>NS: Decided
+    SP->>IS: Decided
 ```
 
 ---
@@ -379,7 +379,7 @@ Besides the messages already defined in the [SCP protocol](./synchronous_composa
 we have the following additional messages:
 
 ```protobuf
-message NativeDecided {
+message IntegratedDecided {
     uint64 SuperblockNumber = 1;
     bytes xTid = 2;
     bool Decision = 3;
@@ -397,16 +397,16 @@ message WSDecided {
 
 ```py
 procedure start(instance, erChain):
-    nativeChains = instance.chains - {erChain}
+    integratedChains = instance.chains - {erChain}
     votes = {}
     state = WAIT_NATIVE
     timer = start_timer()
 
-    broadcast(nativeChains, StartInstance(instance))
+    broadcast(integratedChains, StartInstance(instance))
     send(erChain, StartInstance(instance))
 
 on Vote(chainID, vote):
-    if state != WAIT_NATIVE or chainID not in nativeChains:
+    if state != WAIT_NATIVE or chainID not in integratedChains:
         return
     if chainID in votes:                     
         return # duplicate vote
@@ -415,31 +415,31 @@ on Vote(chainID, vote):
 
     if vote == 0:
         stop_timer(timer)
-        broadcast(nativeChains, Decided(0))
-        send(erChain, NativeDecided(0))
+        broadcast(integratedChains, Decided(0))
+        send(erChain, IntegratedDecided(0))
         state = DONE
         return
 
-    if len(votes) == len(nativeChains):
+    if len(votes) == len(integratedChains):
         stop_timer(timer)
-        send(erChain, NativeDecided(1))
+        send(erChain, IntegratedDecided(1))
         state = WAIT_WS
 
 on WSDecided(from, decision):
     if from != erChain or state == DONE:
         return
     if decision == 1 and state == WAIT_NATIVE:
-        # should not happen as WS can only vote after it receives a NativeDecided
-        error("WSDecided(1) before NativeDecided")
+        # should not happen as WS can only vote after it receives a IntegratedDecided
+        error("WSDecided(1) before IntegratedDecided")
 
-    broadcast(nativeChains, Decided(decision))
+    broadcast(integratedChains, Decided(decision))
     state = DONE
-    # Note that a WS failure is final even if native votes are still pending.
+    # Note that a WS failure is final even if ISs votes are still pending.
 
 on timer_fired(timer):
     if state == WAIT_NATIVE:
-        broadcast(nativeChains, Decided(0))
-        send(erChain, NativeDecided(0))
+        broadcast(integratedChains, Decided(0))
+        send(erChain, IntegratedDecided(0))
         state = DONE
 ```
 
@@ -452,7 +452,7 @@ putOutbox = []         # messages that will be pre-populated via putOutbox
 pendingMailbox = []    # mailbox messages received from other chains
 expectedReads = []     # read requests produced by simulations
 writtenCache = set()   # prevents re-broadcasting identical writes
-nativeDecided = None
+integratedDecided = None
 # fixed state-root snapshot which every simulation should be executed on top
 state_root = get_current_state_root()
 timeout = compute_er_timeout(instance_metadata)  # based on Δ_delay, Δ_clock
@@ -511,19 +511,19 @@ procedure consume_mailbox_and_retry():
     if consumed:
         run_simulation()
 
-procedure on NativeDecided(decision):
-    if nativeDecided is not None or state == DONE:
+procedure on IntegratedDecided(decision):
+    if integratedDecided is not None or state == DONE:
         return
-    nativeDecided = decision
+    integratedDecided = decision
     attempt_er_call()
 
 procedure attempt_er_call():
-    if state != WAIT_NATIVE_DECIDED or nativeDecided is None:
+    if state != WAIT_NATIVE_DECIDED or integratedDecided is None:
         return
 
-    if nativeDecided == 0:
+    if integratedDecided == 0:
         state = DONE
-        return    # NSs already rejected
+        return    # ISs already rejected
 
     state = WAIT_ER_RESPONSE
     err = submit_safe_execute_to_ER(putInbox, putOutbox, txs, timeout)
@@ -567,7 +567,7 @@ sequenceDiagram
     Note over WS: Lock snapshot = last fetched state
     Note over WS,ER: No more fetches until instance finishes
 
-    Note over WS,SP: Instance decided (by NativeDecided or WSDecided)
+    Note over WS,SP: Instance decided (by IntegratedDecided or WSDecided)
 
     Note over WS: Resume syncing
 
@@ -588,7 +588,7 @@ Due to the settlement dependency, a proper session management system will be req
 
 Following the SBCP (v2), at the end of the superblock period, sequencers submit an `AggregationProof` to the SP,
 commiting to their final state and to the associated mailbox roots.
-With an external rollup, the mailbox roots from natives should also be compared to the roots stores in the ER.
+With an external rollup, the mailbox roots from integrated rollups should also be compared to the roots stored in the ER.
 
 Therefore, the WS should provide the SP with the ER's external mailbox roots at settlement time.
 While the WS's proof does not need to attest to the ER's correct state execution, it should
@@ -649,7 +649,7 @@ pub struct Output {
 }
 ```
 
-Once a proof is generated, the WS submits it to the SP along with the list of chain-specific inbox and outbox roots, as other native sequencers do.
+Once a proof is generated, the WS submits it to the SP along with the list of chain-specific inbox and outbox roots, as other integrated sequencers do.
 
 **WS ZK Program Pseudocode**
 ```py
@@ -694,12 +694,12 @@ procedure WS_ZK_Program(input: Input) -> Output:
 ### SP Program Modifications
 
 The SP zk program should be adjusted to accept the above program's output
-as well as a list of mailbox roots provided by the WS (exactly as other NSs do)
+as well as a list of mailbox roots provided by the WS (exactly as other ISs do)
 as additional inputs.
 The SP then needs to:
 - Verify the proof for `Output`.
 - Verify that `Output.mailbox_contract` matches the expected ExternalMailbox address for the WS.
-- As done for other rollups, verify that the `Output.mailbox_root` is correct considering list of mailbox roots, and match these roots against native ones. 
+- As done for other rollups, verify that the `Output.mailbox_root` is correct considering list of mailbox roots, and match these roots against integrated ones. 
 
 
 ## Future Work
@@ -707,7 +707,7 @@ The SP then needs to:
 ### Partial Rollback with Multiple CDCP Instances
 
 When there are multiple CDCP instances within a single settlement window, a problematic scenario can arise:
-- Instance 1 succeeds on both ER and the native rollups.
+- Instance 1 succeeds on both ER and the integrated rollups.
 - Instance 2 appears to succeed (WSDecided(1) and Decided(1)), but later the ER fails to persist the corresponding state/mailbox roots.
 - At settlement time, the SP detects a mismatch for instance 2 and must trigger a rollback.
 
@@ -723,13 +723,13 @@ A possible solution is to introduce **micro-superblock (microSB) subcheckpoints*
 - These microSBs form a chain of subcheckpoints within (or across) periods, ordered exactly as the protocol executes instances.
 
 For CDCP specifically:
-- Native sequencers could attach their local `state_root` (or equivalent checkpoint root) to their `Vote(1)` for the instance.
+- Integrated sequencers could attach their local `state_root` (or equivalent checkpoint root) to their `Vote(1)` for the instance.
 - The WS already tracks the ER’s relevant `state_root` through its ZK program.
 - The SP stores this per-instance bundle as a **microSB checkpoint**.
 
 At settlement time:
 - If all microSBs for a period can be proved consistent (including the ER mailbox roots), the SP can advance the network to the last microSB as usual.
-- If a later instance (e.g., instance 2) turns out to be inconsistent, the SP can instruct native sequencers and WS to **roll back only to the last valid microSB**, e.g., the checkpoint after instance 1.
+- If a later instance (e.g., instance 2) turns out to be inconsistent, the SP can instruct integrated sequencers and WS to **roll back only to the last valid microSB**, e.g., the checkpoint after instance 1.
 
 Note that microSB checkpoints can be used to all composability instances (both SCP and CDCP), with the exact same rules as described above.
  
