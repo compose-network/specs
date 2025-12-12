@@ -45,7 +45,7 @@ const (
 )
 
 type publisherInstance struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	// Dependencies
 	network PublisherNetwork
@@ -78,7 +78,7 @@ func NewPublisherInstance(
 
 	// Build runner
 	r := &publisherInstance{
-		mu:            sync.Mutex{},
+		mu:            sync.RWMutex{},
 		network:       network,
 		instance:      instance,
 		nativeChains:  nativeChains,
@@ -122,14 +122,14 @@ func validateNativeChains(instance compose.Instance, erChainID compose.ChainID) 
 }
 
 func (r *publisherInstance) DecisionState() compose.DecisionState {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.decisionState
 }
 
 func (r *publisherInstance) Instance() compose.Instance {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.instance
 }
 
