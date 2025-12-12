@@ -1,7 +1,7 @@
 Feature: Publisher Settlement Proofs
   Once a period ends, sequencers produce zk proofs for their respective chains and
   submit them to the SP
-  The SP collects the proofs a sequential manner, respecting the order of superblocks.
+  The SP collects the proofs in a sequential manner, respecting the order of superblocks.
   Thus, only proofs for the next superblock to be proven (the one after the last finalized superblock) are accepted.
   Once all proofs for the next superblock to be proven are collected, the SP requests
   a superblock proof from the prover, and publishes it to L1.

@@ -34,7 +34,7 @@ Feature: Sequencer Rollback Handling
     And the sequencer "A" sealed blocks "105,106" for period "10" targeting superblock "5"
     And the sequencer "A" has an open block "107" for period "11" targeting superblock "6"
     And the sequencer "A" has an active instance "0xdef"
-    When the sequencer "A" receives Rollback:
+    When the sequencer "A" receives Rollback from publisher:
       | field             | value  |
       | superblock_number | 4      |
       | superblock_hash   | 0x4001 |

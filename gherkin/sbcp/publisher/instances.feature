@@ -2,7 +2,7 @@ Feature: Publisher Instance Scheduling
   The SP initiates multiple composability instances during a period.
   It should maintain a queue with incoming XTRequests from users
   (either sent directly from the user, or relayed by sequencers).
-  It follows the constrain that no chain can participate in more than one
+  It follows the constraint that no chain can participate in more than one
   active instance at the same time.
   Thus, parallel instances are allowed at the publisher level
   as long as their participant sets are disjoint.
@@ -55,7 +55,12 @@ Feature: Publisher Instance Scheduling
 
   @publisher @sbcp @instances
   Scenario: Rejects XTRequests that overlap with active participants
-    Given chains "1,2" are active
+    Given SP started an instance:
+      | field           | value |
+      | sequence_number | 1     |
+      | period_id       | 20     |
+      | xt_request      | "1: [tx1_a, tx1_b] 2: [tx2]" |
+    And chains "1,2" are active
     When SP attempts to start an instance with XTRequest:
       """
       2: [tx2]
@@ -63,7 +68,7 @@ Feature: Publisher Instance Scheduling
       """
     Then the attempt should fail with error:
       """
-      can not start any instance
+      cannot start instance: overlapping active participants
       """
     And chains "1,2" should be marked as active
     And chain "3" should be marked as inactive
@@ -82,7 +87,7 @@ Feature: Publisher Instance Scheduling
       """
     Then the attempt should fail with error:
       """
-      invalid request
+      invalid request: must span at least two chains
       """
     And chain "1" should be marked as inactive
 
