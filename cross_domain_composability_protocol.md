@@ -194,7 +194,7 @@ CONTRACT ExternalMailbox:
         IF usedKeys[key] == true:
             REVERT MessageAlreadyUsed
 
-        IF hash(outbox[key]) != hash(data):
+        IF outbox[key] != data:
             REVERT MessageDataMismatch
             
         # Message was pre-populated and so the write operation is valid to be executed.
