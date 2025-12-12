@@ -1,6 +1,8 @@
 package cdcp
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -112,8 +114,8 @@ type wsInstance struct {
 
 	// Write messages to be prepopulated
 	writePrePopulationMessages []scp.MailboxMessage
-	// Cache of successfully written messages
-	writtenMessagesCache []scp.MailboxMessage
+	// Cache of successfully written messages (map for O(1) lookups)
+	writtenMessagesCache map[string]struct{}
 
 	logger zerolog.Logger
 }
@@ -141,7 +143,7 @@ func NewWrappedSequencerInstance(
 		pendingMessages:            make([]scp.MailboxMessage, 0),
 		vmSnapshot:                 vmSnapshot,
 		writePrePopulationMessages: make([]scp.MailboxMessage, 0),
-		writtenMessagesCache:       make([]scp.MailboxMessage, 0),
+		writtenMessagesCache:       make(map[string]struct{}),
 		logger:                     logger,
 	}
 
@@ -235,21 +237,27 @@ func (ws *wsInstance) Run() error {
 // Should be called with lock held.
 func (ws *wsInstance) sendWriteMessages(messages []scp.MailboxMessage) {
 	for _, msg := range messages {
-		// Check if belongs to cache
-		alreadySent := false
-		for _, cachedMsg := range ws.writtenMessagesCache {
-			if cachedMsg.Equal(msg) {
-				alreadySent = true
-				break
-			}
-		}
-		if alreadySent {
+		// Hash message and check if it has been sent before
+		hdr := msg.MailboxMessageHeader
+		dataHex := hex.EncodeToString(msg.Data)
+		full := fmt.Sprintf("%v|%v|%v|%v|%v|%s|%s",
+			hdr.SessionID,
+			hdr.SourceChainID,
+			hdr.DestChainID,
+			hdr.Sender,
+			hdr.Receiver,
+			hdr.Label,
+			dataHex,
+		)
+		hash := sha256.Sum256([]byte(full))
+		key := hex.EncodeToString(hash[:])
+		if _, exists := ws.writtenMessagesCache[key]; exists {
 			continue
 		}
 
-		// Send and add to cache if new message
+		// Send and add to the cache if it's a new message
 		ws.network.SendMailboxMessage(msg.MailboxMessageHeader.DestChainID, msg)
-		ws.writtenMessagesCache = append(ws.writtenMessagesCache, msg)
+		ws.writtenMessagesCache[key] = struct{}{}
 	}
 }
 
