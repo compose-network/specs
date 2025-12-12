@@ -10,7 +10,7 @@ The atomicity property refers to the guarantee that either both rollups successf
 - [Informal Protocol Intuition](#informal-protocol-intuition)
 - [External Mailbox](#external-mailbox)
 - [Protocol](#protocol)
-  - [Integrated Sequencer (IS)](#integrated-sequencer-ns)
+  - [Integrated Sequencer (IS)](#integrated-sequencer-is)
   - [Shared Publisher (SP)](#shared-publisher-sp)
   - [Wrapped Sequencer (WS)](#wrapped-sequencer-ws)
   - [Messages](#messages)
