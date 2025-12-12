@@ -742,5 +742,5 @@ At settlement time:
 - If all microSBs for a period can be proved consistent (including the ER mailbox roots), the SP can advance the network to the last microSB as usual.
 - If a later instance (e.g., instance 2) turns out to be inconsistent, the SP can instruct integrated sequencers and WS to **roll back only to the last valid microSB**, e.g., the checkpoint after instance 1.
 
-Note that microSB checkpoints can be used to all composability instances (both SCP and CDCP), with the exact same rules as described above.
+Note that microSB checkpoints can be used for all composability instances (both SCP and CDCP), with the exact same rules as described above.
  
