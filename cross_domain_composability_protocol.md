@@ -232,11 +232,11 @@ Then, each IS runs **exactly** the protocol rules of the [SCP protocol](./synchr
 2. Then, it simulates its transactions, meaning that it executes them with a tracer at the mailbox, so that it can intercept `mailbox.Read` and `mailbox.Write` operations.
 3. Once a `mailbox.Write` operation is intercepted, it sends a `Mailbox` message to the counterparty chain sequencer (either the WS or another IS).
 4. Whenever a `mailbox.Read` operation is triggered and fails, it waits until a mailbox message is received.
-5. Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox' transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
+5. Once a mailbox message is received from another sequencer, it adds a `mailbox.putInbox` transaction with it, placing it before the main transaction in the transaction list. Then, it goes back to step 2, re-starting the transaction simulation.
 6. In case the transaction simulation is successful, it stops the timer (as it no longer will be used) and sends a `Vote(1)` message to the SP, indicating its willingness to include the transaction.
 7. In case there's a timeout (before a `Vote` message has been sent) or if the transaction simulation fails but not due to a mailbox read error, it sends a `Vote(0)` message to the SP, indicating the impossibility of including the transaction, and terminates.
-8. In case a `Decided(1)` message is received from the SP, it adds all `mailbox.putInbox' transactions created and the main transaction to the block, and terminates.
-9. In case a `Decided(0)` message is received from the SP, it removes all `mailbox.putInbox' transactions created and the main transaction from the block, reverting to the previous state, and terminates.
+8. In case a `Decided(1)` message is received from the SP, it adds all `mailbox.putInbox` transactions created and the main transaction to the block, and terminates.
+9. In case a `Decided(0)` message is received from the SP, it removes all `mailbox.putInbox` transactions created and the main transaction from the block, reverting to the previous state, and terminates.
 
 **Sequence Diagram - IS View**
 ```mermaid
