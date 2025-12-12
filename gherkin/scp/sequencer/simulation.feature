@@ -35,9 +35,9 @@ Feature: Sequencer Simulation And Mailbox Population
     And no additional MailboxMessage should be forwarded
 
     Examples:
-      | result                                  | vote  |
-      | returns success                         | true  |
-      | returns an error other than "Read miss" | false |
+      | result                                    | vote  |
+      | succeeds                                  | true  |
+      | an error is raised other than "Read miss" | false |
 
   @sequencer @scp @simulation @mailbox
   Scenario: Records expected mailbox message after read miss
