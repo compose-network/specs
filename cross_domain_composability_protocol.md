@@ -202,7 +202,7 @@ CONTRACT ExternalMailbox:
         usedKeys[key] = true
         data = outbox[key]
 
-        IF destChainID not in outboxRootPerChain[destChainID]:
+        IF destChainID not in outboxRootPerChain:
             append destChainID to chainIDsOutbox
 
         outboxRootPerChain[destChainID] =
