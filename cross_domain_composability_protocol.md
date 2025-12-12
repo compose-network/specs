@@ -197,7 +197,7 @@ CONTRACT ExternalMailbox:
         IF hash(outbox[key]) != hash(data):
             REVERT MessageDataMismatch
             
-        # Message is was pre-populated and so the write operation is valid to be executed.
+        # Message was pre-populated and so the write operation is valid to be executed.
 
         usedKeys[key] = true
         data = outbox[key]
