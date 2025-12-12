@@ -262,7 +262,7 @@ sequenceDiagram
 The Shared Publisher (SP) runs a slightly modified version of the SCP protocol:
 1. It sends a `StartInstance` message to the appropriate sequencers, starts a timer, and waits for ISs' `Vote` messages.
 2. If a timeout occurs or if a `Vote(0)` message is received (indicates a failure), it sends a `Decided(0)` message to the ISs and a `IntegratedDecided(0)` message to the WS, and terminates.
-3. If it receives a `Vote(1)` message from all ISs, it stops the timer (as it not longer will be used) and sends a `IntegratedDecided(1)` message to the WS, indicating that the ISs are willing to proceed.
+3. If it receives a `Vote(1)` message from all ISs, it stops the timer (as it no longer will be used) and sends a `IntegratedDecided(1)` message to the WS, indicating that the ISs are willing to proceed.
 4. Once a `WSDecided(b)` message is received from the WS, it sends a `Decided(b)` message indicating the result to the ISs, and terminates.
 
 Note that, from the above, the SP works as a middle layer between the ISs and WS.
