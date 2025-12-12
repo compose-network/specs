@@ -113,7 +113,7 @@ message Proof {
 // Uses StartInstance, MailboxMessage, Vote, Decided defined above
 
 // SP sends to the WS after collecting votes
-message NativeDecided {
+message IntegratedDecided {
   bytes instance_id = 1;
   bool decision = 2;
 }
@@ -151,7 +151,7 @@ message Message {
     Proof proof = 13;
 
     // CDCP
-    NativeDecided native_decided = 14;
+    IntegratedDecided integrated_decided = 14;
     WSDecided ws_decided = 15;
   }
 }
