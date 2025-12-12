@@ -60,7 +60,7 @@ In contrast, V1 could roll back every 12 seconds, due to temporary bad network c
 **Actors and roles**:
 - **Shared Publisher (SP)**: the coordinator that schedules composability instance
 and triggers period update and the settlement pipeline.
-- **Native Sequencers**: one per rollup, who builds L2 blocks at a self-chosen frequency,
+- **Sequencers**: one per rollup, who builds L2 blocks at a self-chosen frequency,
 participates in composability when instructed, and produces proofs about its blocks and mailbox activity.
 
 **Communication**:
