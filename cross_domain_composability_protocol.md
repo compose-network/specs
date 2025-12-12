@@ -505,13 +505,19 @@ procedure on MailboxMessage(msg):
 
 procedure consume_mailbox_and_retry():
     consumed = false
+    to_remove_expected = []
+    to_remove_pending = []
     for expected in expectedReads:
         match = find_matching_message(expected, pendingMailbox)
         if match exists:
-            remove(expectedReads, expected)
-            remove(pendingMailbox, match)
+            to_remove_expected.append(expected)
+            to_remove_pending.append(match)
             putInbox.append(match)
             consumed = true
+    for expected in to_remove_expected:
+        remove(expectedReads, expected)
+    for match in to_remove_pending:
+        remove(pendingMailbox, match)
     if consumed:
         run_simulation()
 
