@@ -346,7 +346,7 @@ sequenceDiagram
     User->>SP: User op
 
     SP->>IS: StartInstance
-    IS->>WS: StartInstance
+    SP->>WS: StartInstance
 
     Note right of WS:3.5) "write" trigger:
     Note right of WS:i) send to destination IS
