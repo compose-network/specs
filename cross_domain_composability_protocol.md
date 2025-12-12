@@ -484,6 +484,11 @@ procedure run_simulation():
     
     # Else -> success
     state = WAIT_NATIVE_DECIDED
+    # Race condition note:
+    # attempt_er_call() is called here after simulation success, but it will only proceed if integratedDecided is already set.
+    # If IntegratedDecided has not yet arrived, attempt_er_call() will do nothing.
+    # When IntegratedDecided does arrive (see procedure on IntegratedDecided), attempt_er_call() is called again.
+    # This dual invocation ensures correct behavior regardless of event order, and is safe because attempt_er_call() is idempotent.
     attempt_er_call()
 
 procedure send_new_write_messages(messages):
