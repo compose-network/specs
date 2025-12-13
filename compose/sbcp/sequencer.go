@@ -184,7 +184,7 @@ func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
 	}
 
 	if s.Head != 0 && blockNumber != s.Head+1 {
-		fmt.Println("shota ErrBlockNotSequential", blockNumber, s.Head)
+		fmt.Println("shota -- ErrBlockNotSequential", blockNumber, s.Head)
 		return ErrBlockNotSequential
 	}
 
