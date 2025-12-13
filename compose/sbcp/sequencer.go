@@ -176,6 +176,7 @@ func (s *sequencer) startSettlement(ctx context.Context, periodID compose.Period
 func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if s.PendingBlock != nil {
 		return ErrBlockAlreadyOpen
 	}
@@ -185,6 +186,7 @@ func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
 	}
 
 	s.logger.Info().Uint64("new_block_number", uint64(blockNumber)).Msg("Beginning block")
+
 	// Add immutable tags to the new block
 	s.PendingBlock = &PendingBlock{
 		Number:           blockNumber,
