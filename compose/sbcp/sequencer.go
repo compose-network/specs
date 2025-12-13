@@ -3,6 +3,7 @@ package sbcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/compose-network/specs/compose"
@@ -14,7 +15,7 @@ var (
 		"block number to be sealed does not match the current block number",
 	)
 	ErrBlockAlreadyOpen         = errors.New("there is already an open block")
-	ErrBlockNotSequential       = errors.New("block number is not sequential")
+	ErrBlockNotSequential       = errors.New("block number is not sequential-1")
 	NoPendingBlock              = errors.New("no pending block")
 	ErrActiveInstanceExists     = errors.New("there is already an active instance")
 	ErrNoActiveInstance         = errors.New("no active instance")
@@ -174,19 +175,20 @@ func (s *sequencer) startSettlement(ctx context.Context, periodID compose.Period
 
 // BeginBlock is a hook called at the start of a new L2 block.
 func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
+	fmt.Println("shota BeginBlock", blockNumber)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
+	fmt.Println("shota BeginBlock 2", blockNumber)
 	if s.PendingBlock != nil {
 		return ErrBlockAlreadyOpen
 	}
 
 	if blockNumber != s.Head+1 {
+		fmt.Println("shota ErrBlockNotSequential", blockNumber, s.Head)
 		return ErrBlockNotSequential
 	}
 
 	s.logger.Info().Uint64("new_block_number", uint64(blockNumber)).Msg("Beginning block")
-
 	// Add immutable tags to the new block
 	s.PendingBlock = &PendingBlock{
 		Number:           blockNumber,
@@ -277,6 +279,7 @@ func (s *sequencer) EndBlock(ctx context.Context, b BlockHeader) error {
 	settlementPeriod := s.PeriodID - 1
 	settlementSuperblock := s.TargetSuperblockNumber - 1
 
+	fmt.Println("shota Endblock")
 	s.PendingBlock = nil
 	s.Head = b.Number
 
@@ -329,6 +332,7 @@ func (s *sequencer) Rollback(
 	}
 
 	// Discard current block and active instance
+	fmt.Println("shota Endblock")
 	s.PendingBlock = nil
 	s.ActiveInstanceID = nil
 	s.Head = s.SettledState.BlockHeader.Number
