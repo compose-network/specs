@@ -18,7 +18,6 @@ The Universal Shared Bridge for OP Chains enables seamless asset transfers betwe
 11. **Replay Protection:** Messages can be consumed only once. Any replay will be ignored.  
 12. **Inter-L2 Fast Path:** For **L2↔L2** transfers, the destination **mints on receipt of a bridge message** (no proof verification at claim time). **Later settlement** is done simultaneously via aggregated proofs (out of scope here).
 13. **Native token support**: If a CoreComposeable (ICET-compatible native token) exists for the asset on a destination chain, the bridge mints to it; otherwise it deploys a WrappedComposeable and mints there. Holders can later redeem WrappedCET into CoreComposeable on that chain via the bridge.
-14. **ERC-4626 Vault Custody:** For any non-wrapped token (on L1 or an escrow L2), the bridge locks underlying tokens in an ERC-4626 vault **per depositor address**; CET minted on remote chains represents vault shares, and bridging back burns those shares and releases the corresponding underlying from the depositor’s vault.
 
 ---
 # ComposeableERC20
@@ -33,10 +32,6 @@ interface ICET is ERC20, IERC7802 {
 
     /// @notice Returns the remote asset address corresponding to this token on the remote chain.
     function getRemoteAsset() external view returns (address);
-
-    /// @notice Returns the depositor whose ERC-4626 vault backs this token's underlying assets.
-    /// @dev Used when bridging back to locate the correct per-depositor vault on the canonical or escrow chain.
-    function getDepositor() external view returns (address);
 }
 
 abstract contract ComposeableERC20 is ICET {
@@ -387,21 +382,17 @@ function bridgeERC20To(
     // for implementation we need to make sure this is the actual human inititator
     address sender = msg.sender;
 
-
-    // Creates or fetches and ERC4626 vault for this sender
-    ERC4626Vault vault = fetchOrCreateVault(tokenSrc)
-    // Bridge should get control of the shares
-    shares = vault.deposit(amount, address(this))
-    emit TokensLocked(tokenSrc, sender, amount, shares);
+    IERC20(tokenSrc).transferFrom(sender, address(this), amount);
+    emit TokensLocked(tokenSrc, sender, amount);
 
     string memory name = ERC20(tokenSrc).name();
     string memory symbol = ERC20(tokenSrc).symbol();
     uint8 decimals = ERC20(tokenSrc).decimals();
-    bytes memory payload = abi.encode(block.chainid, tokenSrc, shares, name, symbol, decimals, sender);
+    bytes memory payload = abi.encode(block.chainid, tokenSrc, amount, name, symbol, decimals);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
     // performs a mailbox read for an "ACK" labeled message.
-    checkAck(sessionID, chainDest, receiver, sender, tokenSrc, shares)
+    checkAck(sessionID, chainDest, receiver, sender, tokenSrc, amount)
 
     emit MailboxWrite(chainDest, receiver, sessionId, "SEND_TOKEN");
 
@@ -427,11 +418,10 @@ function bridgeCETTo(
 
     uint256 remoteChainID = ICET(cetTokenSrc).remoteChainID();
     address remoteAsset = ICET(cetTokenSrc).remoteAsset(); 
-    address depositor = ICET(cetTokenSrc).getDepositor();
     string memory name = ICET(cetTokenSrc).name();
     string memory symbol = ICET(cetTokenSrc).symbol();
     uint8 decimals = ICET(cetTokenSrc).decimals();
-    bytes memory payload = abi.encode(remoteChainID, remoteAsset, depositor, amount, name, symbol, decimals);
+    bytes memory payload = abi.encode(remoteChainID, remoteAsset, amount, name, symbol, decimals);
 
     mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
     checkAck(sessionID, chainDest, receiver, sender, cetTokenSrc, amount)
@@ -462,15 +452,15 @@ function receiveTokens(
     uint256 remoteChainID;
     address remoteAsset;
 
-    (remoteChainID, remoteAsset, depositor, amount, name, symbol, decimals) =
-        abi.decode(m, (uint256, address, address, uint256, string, string, uint8));
+    (remoteChainID, remoteAsset, amount, name, symbol, decimals) =
+        abi.decode(m, (uint256, address, uint256, string, string, uint8));
 
 
     // 2) RELEASE if native token is hosted & escrowed here, else MINT Composeable (Core if present, else WrappedCET)
-    if remoteChainID == block.chainid && fetchVault(remoteAsset).maxRedeem()>=amount) {
+    if remoteChainID == block.chainid && IERC20(remoteAddress).balanceOf(address(this)) >= amount) {
         // Release escrowed native tokens
-        require(fetchVault.redeem(amount, receiver, address(this)), "Native release failed");
-        token = remoteAsset;
+        require(IERC20(native).transfer(receiver, amount), "Native release failed");
+        token = native;
     } else {
         // Mint deterministic Composeable on this chain
         // Metadata is useful in case WrappedCET not yet deployed.
@@ -613,19 +603,19 @@ function receiveETH(
 
 We need to utilize the current OP-contracts with minimal changes. Namely the `StandardBridge.sol`, `CrossDomainMessenger.sol`. 
 
-Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy its portal that will use a shared `ETHLockBox` and an `ERC20LockBox`. The `ERC20 The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain. It should
+Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy its portal that will use a shared `ETHLockBox` and an `ERC20LockBox`. The `ERC20 The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
 
 The `finalizeBridgeERC20` and `initiateBridgeERC20` calls in the birdge must be change so they will work with `ComposableERC20s`.
 
 The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
 
 `OptimismPortal` utilizes the [OPSuccinct design](https://succinctlabs.github.io/op-succinct/architecture.html#op-succinct-design) with the following changes:
-1. It also deposits tokens to an `ERC20LockBox`, a multi ERC4626 vault.
+1. It also deposits tokens to an `ERC20LockBox` (TODO: spec it?)
 2. It is universal across chains and should be owned by neutral actor.
 2. [TODO move validation rule from settlement doc]
 3. Withdrawal logic reuses the l2<->l2 defintions.
 
-As a result of the addition of `ERC20LockBox` the bridge contract on L1 shouldn't lock tokens itself.
+As a result of the addition of `ERC20LockBox` the bridge contract on L1 shouldn't lock tokens.
 
 ## L1<->L2 bridge for External rollups
 
