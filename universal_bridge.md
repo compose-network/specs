@@ -610,10 +610,10 @@ The `finalizeBridgeERC20` and `initiateBridgeERC20` calls in the birdge must be 
 The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
 
 `OptimismPortal` utilizes the [OPSuccinct design](https://succinctlabs.github.io/op-succinct/architecture.html#op-succinct-design) with the following changes:
-1. It also deposits tokens to an `ERC20LockBox` (TODO: spec it?)
+1. It also deposits tokens to an `ERC20LockBox
 2. It is universal across chains and should be owned by neutral actor.
-2. [TODO move validation rule from settlement doc]
-3. Withdrawal logic reuses the l2<->l2 defintions.
+3. [TODO move validation rule from settlement doc]
+4. Withdrawal logic reuses the l2<->l2 defintions.
 
 As a result of the addition of `ERC20LockBox` the bridge contract on L1 shouldn't lock tokens.
 
@@ -794,15 +794,13 @@ flowchart TD
 - Security relies on `onlyOtherBridge` and proof verification via the dispute game.
 
 
+#### ERC20LockBox
+
+This keeps a simple `mapping(address token => uint256 amount)` per token.
+There should be complete isolation between different tokens.
+This should mean a malicious token can only break its own accounting without affetcting the others.
+
 
 ### ETH
 
 Similar to ERC-20, but should *always* be used with a `ComposeableERC20` conversion when bridged from either direction.
-
-
-## TODO 
-- [x] location of ethlockbox on external rollups
-- [x] ensure events and logic on transfer ETH
-- [x] pass metadata
-- [] native minting
-- [] bApp handling of rebasing tokens
