@@ -1,8 +1,9 @@
 package scp
 
 import (
-	"github.com/compose-network/specs/compose"
 	"testing"
+
+	"github.com/compose-network/specs/compose"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -164,6 +165,97 @@ func TestSequencer_TimeoutBeforeVoteSendsFalse(t *testing.T) {
 
 	// Now mailbox is ignored
 	require.NoError(t, seq.ProcessMailboxMessage(need))
+}
+
+func TestSequencer_TimeoutWithMultipleUnfulfilledReads(t *testing.T) {
+	msgA := makeMsg(compose.ChainID(2), compose.ChainID(1), compose.SessionID(100), "labelA", nil)
+	msgB := makeMsg(compose.ChainID(3), compose.ChainID(1), compose.SessionID(100), "labelB", nil)
+
+	// Simulation: need A, then need B (both will remain unfulfilled)
+	eng := &fakeExecutionEngine{
+		id: 1,
+		steps: []simulateResp{
+			{read: &msgA.MailboxMessageHeader},
+			{read: &msgB.MailboxMessageHeader},
+		},
+	}
+	net := &fakeSequencerNetwork{}
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 1, Transactions: [][]byte{[]byte("tx")}},
+			},
+		},
+	}
+
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
+	require.NoError(t, err)
+	require.NoError(t, seq.Run())
+
+	impl := requireSequencerImpl(t, seq)
+
+	// After the first simulation, we should have one expected read request (A)
+	assert.Equal(t, SeqStateSimulating, impl.state)
+	assert.Len(t, impl.expectedReadRequests, 1)
+	assert.Equal(t, msgA.MailboxMessageHeader, impl.expectedReadRequests[0])
+
+	// No votes yet
+	assert.Len(t, net.votes, 0)
+
+	// Timeout should reject and vote false
+	seq.Timeout()
+
+	// Verify state transitions
+	assert.Equal(t, SeqStateDone, impl.state)
+	assert.Equal(t, compose.DecisionStateRejected, seq.DecisionState())
+
+	// Verify vote(false) was sent
+	if assert.Len(t, net.votes, 1) {
+		assert.False(t, net.votes[0])
+	}
+
+	// The expectedReadRequests should still contain the unfulfilled read (for logging)
+	assert.Len(t, impl.expectedReadRequests, 1)
+	req := impl.expectedReadRequests[0]
+	assert.Equal(t, compose.ChainID(2), req.SourceChainID)
+	assert.Equal(t, compose.ChainID(1), req.DestChainID)
+	assert.Equal(t, compose.SessionID(100), req.SessionID)
+	assert.Equal(t, "labelA", req.Label)
+}
+
+func TestSequencer_TimeoutAfterWaitingDecidedIgnored(t *testing.T) {
+	// Simulation succeeds immediately
+	eng := &fakeExecutionEngine{id: 1, steps: []simulateResp{}}
+	net := &fakeSequencerNetwork{}
+	inst := compose.Instance{
+		XTRequest: compose.XTRequest{
+			Transactions: []compose.TransactionRequest{
+				{ChainID: 1, Transactions: [][]byte{[]byte("tx")}},
+			},
+		},
+	}
+
+	seq, err := NewSequencerInstance(inst, eng, net, compose.StateRoot{}, testLogger())
+	require.NoError(t, err)
+	require.NoError(t, seq.Run())
+
+	impl := requireSequencerImpl(t, seq)
+
+	// Should have voted true and be waiting for decision
+	assert.Equal(t, SeqStateWaitingDecided, impl.state)
+	if assert.Len(t, net.votes, 1) {
+		assert.True(t, net.votes[0])
+	}
+
+	// Timeout should be ignored when in the WaitingDecided state
+	seq.Timeout()
+
+	// State should remain unchanged
+	assert.Equal(t, SeqStateWaitingDecided, impl.state)
+	assert.Equal(t, compose.DecisionStatePending, seq.DecisionState())
+
+	// No additional votes should be sent
+	assert.Len(t, net.votes, 1)
 }
 
 func TestSequencer_SimulationErrorVotesFalse(t *testing.T) {

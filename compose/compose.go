@@ -30,6 +30,10 @@ func (id InstanceID) String() string {
 	return hex.EncodeToString(id[:])
 }
 
+func (a EthAddress) String() string {
+	return "0x" + hex.EncodeToString(a[:])
+}
+
 type TransactionRequest struct {
 	ChainID      ChainID
 	Transactions [][]byte

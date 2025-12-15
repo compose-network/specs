@@ -308,13 +308,14 @@ func (r *sequencerInstance) Timeout() {
 	if len(r.expectedReadRequests) > 0 {
 		for _, req := range r.expectedReadRequests {
 			r.logger.Warn().
+				Str("op", "read").
 				Uint64("src_chain", uint64(req.SourceChainID)).
 				Uint64("dest_chain", uint64(req.DestChainID)).
-				Str("sender", fmt.Sprintf("%x", req.Sender[:])).
-				Str("receiver", fmt.Sprintf("%x", req.Receiver[:])).
+				Str("sender", req.Sender.String()).
+				Str("receiver", req.Receiver.String()).
 				Uint64("session_id", uint64(req.SessionID)).
 				Str("label", req.Label).
-				Msg("Timeout waiting for mailbox message: read(chainMessageSender, sender, sessionId, label)")
+				Msg("Unfulfilled mailbox request")
 		}
 	}
 
