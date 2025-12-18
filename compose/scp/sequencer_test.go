@@ -167,8 +167,12 @@ func TestSequencer_TimeoutBeforeVoteSendsFalse(t *testing.T) {
 }
 
 func TestSequencer_TimeoutWithMultipleUnfulfilledReads(t *testing.T) {
-	msgA := makeMsg(compose.ChainID(2), compose.ChainID(1), compose.SessionID(100), "labelA", nil)
-	msgB := makeMsg(compose.ChainID(3), compose.ChainID(1), compose.SessionID(100), "labelB", nil)
+	const session compose.SessionID = 100
+
+	msgA := makeMsg(compose.ChainID(2), "labelA", nil)
+	msgA.SessionID = session
+	msgB := makeMsg(compose.ChainID(3), "labelB", nil)
+	msgB.SessionID = session
 
 	// Simulation: need A, then need B (both will remain unfulfilled)
 	eng := &fakeExecutionEngine{
@@ -199,7 +203,7 @@ func TestSequencer_TimeoutWithMultipleUnfulfilledReads(t *testing.T) {
 	assert.Equal(t, msgA.MailboxMessageHeader, impl.expectedReadRequests[0])
 
 	// No votes yet
-	assert.Len(t, net.votes, 0)
+	assert.Empty(t, net.votes)
 
 	// Timeout should reject and vote false
 	seq.Timeout()
