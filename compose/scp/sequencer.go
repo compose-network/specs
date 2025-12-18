@@ -294,7 +294,7 @@ func (r *sequencerInstance) ProcessDecidedMessage(decided bool) error {
 }
 
 // Timeout is invoked when the timer fires.
-// If not already in waiting for decided or done state, terminates as rejected and sends Vote(false) to SP.
+// If not already in waiting for a decided or done state, terminates as rejected and sends Vote(false) to SP.
 func (r *sequencerInstance) Timeout() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -305,7 +305,22 @@ func (r *sequencerInstance) Timeout() {
 		return
 	}
 
+	if len(r.expectedReadRequests) > 0 {
+		for _, req := range r.expectedReadRequests {
+			r.logger.Warn().
+				Str("op", "read").
+				Uint64("src_chain", uint64(req.SourceChainID)).
+				Uint64("dest_chain", uint64(req.DestChainID)).
+				Str("sender", req.Sender.String()).
+				Str("receiver", req.Receiver.String()).
+				Uint64("session_id", uint64(req.SessionID)).
+				Str("label", req.Label).
+				Msg("Unfulfilled mailbox request")
+		}
+	}
+
 	r.logger.Info().
+		Int("unfulfilled_reads", len(r.expectedReadRequests)).
 		Msg("Timeout occurred, rejecting instance")
 
 	r.state = SeqStateDone
