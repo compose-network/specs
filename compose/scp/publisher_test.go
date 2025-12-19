@@ -4,8 +4,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/compose-network/specs/compose"
 	"github.com/rs/zerolog"
+
+	"github.com/compose-network/specs/compose"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

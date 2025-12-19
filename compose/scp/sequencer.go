@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/compose-network/specs/compose"
 	"github.com/rs/zerolog"
+
+	"github.com/compose-network/specs/compose"
 )
 
 var (
@@ -147,7 +148,6 @@ func (r *sequencerInstance) Run() error {
 		Snapshot:         r.vmSnapshot,
 	})
 	if err != nil {
-
 		r.logger.Info().Msg("Simulation failed, rejecting instance. Error: " + err.Error())
 
 		r.network.SendVote(false)
@@ -201,7 +201,7 @@ func (r *sequencerInstance) sendWriteMessages(messages []MailboxMessage) {
 }
 
 // consumeReceivedMailboxMessagesAndSimulate checks if any expected read mailbox messages have been received
-// If so, remove from the lists, and call run to simulate
+// If so, remove from the lists, and call run to simulate.
 func (r *sequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 	r.mu.Lock()
 	includedAny := false
@@ -242,7 +242,7 @@ func (r *sequencerInstance) consumeReceivedMailboxMessagesAndSimulate() error {
 	return nil
 }
 
-// ProcessMailboxMessage processes an incoming mailbox message
+// ProcessMailboxMessage processes an incoming mailbox message.
 func (r *sequencerInstance) ProcessMailboxMessage(msg MailboxMessage) error {
 	r.mu.Lock()
 	if r.state != SeqStateSimulating {
@@ -265,7 +265,7 @@ func (r *sequencerInstance) ProcessMailboxMessage(msg MailboxMessage) error {
 	return r.consumeReceivedMailboxMessagesAndSimulate()
 }
 
-// ProcessDecidedMessage receives a decided message from the SP
+// ProcessDecidedMessage receives a decided message from the SP.
 func (r *sequencerInstance) ProcessDecidedMessage(decided bool) error {
 	r.mu.Lock()
 
@@ -294,7 +294,7 @@ func (r *sequencerInstance) ProcessDecidedMessage(decided bool) error {
 }
 
 // Timeout is invoked when the timer fires.
-// If not already in waiting for decided or done state, terminates as rejected and sends Vote(false) to SP.
+// If not already in waiting for a decided or done state, terminates as rejected and sends Vote(false) to SP.
 func (r *sequencerInstance) Timeout() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -305,7 +305,22 @@ func (r *sequencerInstance) Timeout() {
 		return
 	}
 
+	if len(r.expectedReadRequests) > 0 {
+		for _, req := range r.expectedReadRequests {
+			r.logger.Warn().
+				Str("op", "read").
+				Uint64("src_chain", uint64(req.SourceChainID)).
+				Uint64("dest_chain", uint64(req.DestChainID)).
+				Str("sender", req.Sender.String()).
+				Str("receiver", req.Receiver.String()).
+				Uint64("session_id", uint64(req.SessionID)).
+				Str("label", req.Label).
+				Msg("Unfulfilled mailbox request")
+		}
+	}
+
 	r.logger.Info().
+		Int("unfulfilled_reads", len(r.expectedReadRequests)).
 		Msg("Timeout occurred, rejecting instance")
 
 	r.state = SeqStateDone

@@ -5,8 +5,9 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/compose-network/specs/compose"
 	"github.com/rs/zerolog"
+
+	"github.com/compose-network/specs/compose"
 )
 
 var (
@@ -15,7 +16,7 @@ var (
 	)
 	ErrBlockAlreadyOpen         = errors.New("there is already an open block")
 	ErrBlockNotSequential       = errors.New("block number is not sequential")
-	NoPendingBlock              = errors.New("no pending block")
+	ErrNoPendingBlock           = errors.New("no pending block")
 	ErrActiveInstanceExists     = errors.New("there is already an active instance")
 	ErrNoActiveInstance         = errors.New("no active instance")
 	ErrActiveInstanceMismatch   = errors.New("mismatched active instance ID")
@@ -55,12 +56,21 @@ type Sequencer interface {
 type SequencerProver interface {
 	// RequestProofs starts the settlement pipeline using the provided block header as head.
 	// If nil, it means there's no sealed block for the period.
-	RequestProofs(ctx context.Context, blockHeader *BlockHeader, superblockNumber compose.SuperblockNumber) ([]byte, error)
+	RequestProofs(
+		ctx context.Context,
+		blockHeader *BlockHeader,
+		superblockNumber compose.SuperblockNumber,
+	) ([]byte, error)
 }
 
 type SequencerMessenger interface {
 	ForwardRequest(ctx context.Context, request compose.XTRequest) error
-	SendProof(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber, proof []byte) error
+	SendProof(
+		ctx context.Context,
+		periodID compose.PeriodID,
+		superblockNumber compose.SuperblockNumber,
+		proof []byte,
+	) error
 }
 
 type SequencerState struct {
@@ -154,7 +164,11 @@ func (s *sequencer) StartPeriod(
 // startSettlement starts the settlement pipeline for the given period.
 // It requests a proof from the prover. Note that this operation may take a while and thus it is done outside locks.
 // Then, it sends the proof to the SP.
-func (s *sequencer) startSettlement(ctx context.Context, periodID compose.PeriodID, superblockNumber compose.SuperblockNumber) error {
+func (s *sequencer) startSettlement(
+	ctx context.Context,
+	periodID compose.PeriodID,
+	superblockNumber compose.SuperblockNumber,
+) error {
 	s.mu.Lock()
 	var header *BlockHeader
 	block, ok := s.SealedBlockHead[periodID]
@@ -201,17 +215,21 @@ func (s *sequencer) CanIncludeLocalTx() (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.PendingBlock == nil {
-		return false, NoPendingBlock
+		return false, ErrNoPendingBlock
 	}
 	return s.ActiveInstanceID == nil, nil
 }
 
 // OnStartInstance sets an active instance, locking local tx inclusion (SCP start-up hook).
-func (s *sequencer) OnStartInstance(id compose.InstanceID, periodID compose.PeriodID, sequenceNumber compose.SequenceNumber) error {
+func (s *sequencer) OnStartInstance(
+	id compose.InstanceID,
+	periodID compose.PeriodID,
+	sequenceNumber compose.SequenceNumber,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.PendingBlock == nil {
-		return NoPendingBlock
+		return ErrNoPendingBlock
 	}
 	if s.ActiveInstanceID != nil {
 		return ErrActiveInstanceExists
@@ -255,7 +273,7 @@ func (s *sequencer) EndBlock(ctx context.Context, b BlockHeader) error {
 	s.mu.Lock()
 	if s.PendingBlock == nil {
 		s.mu.Unlock()
-		return NoPendingBlock
+		return ErrNoPendingBlock
 	}
 	if s.PendingBlock.Number != b.Number {
 		s.mu.Unlock()
@@ -313,7 +331,7 @@ func (s *sequencer) Rollback(
 ) (BlockHeader, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !(superblockNumber == s.SettledState.SuperblockNumber && superblockHash == s.SettledState.SuperblockHash) {
+	if superblockNumber != s.SettledState.SuperblockNumber || superblockHash != s.SettledState.SuperblockHash {
 		return BlockHeader{}, ErrMismatchedFinalizedState
 	}
 

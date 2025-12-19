@@ -4,8 +4,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/compose-network/specs/compose"
 	"github.com/rs/zerolog"
+
+	"github.com/compose-network/specs/compose"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,11 @@ func newSequencerForTest(
 ) (*sequencer, *fakeSequencerProver, *fakeSequencerMessenger) {
 	prover := &fakeSequencerProver{}
 	messenger := &fakeSequencerMessenger{}
-	s := NewSequencer(prover, messenger, period, target, settled, testLogger()).(*sequencer)
+	seq := NewSequencer(prover, messenger, period, target, settled, testLogger())
+	s, ok := seq.(*sequencer)
+	if !ok {
+		panic("NewSequencer did not return *sequencer")
+	}
 	return s, prover, messenger
 }
 
@@ -49,23 +54,22 @@ func TestSequencer_BeginBlock_ok_and_errors(t *testing.T) {
 	assert.Equal(t, compose.SuperblockNumber(6), s.PendingBlock.SuperblockNumber)
 
 	// Already open
-	assert.ErrorIs(t, s.BeginBlock(12), ErrBlockAlreadyOpen)
+	require.ErrorIs(t, s.BeginBlock(12), ErrBlockAlreadyOpen)
 
 	// Seal to clear pending
 	require.NoError(t, s.EndBlock(t.Context(), mkHeader(11)))
 
 	// Not sequential
-	assert.ErrorIs(t, s.BeginBlock(13), ErrBlockNotSequential)
+	require.ErrorIs(t, s.BeginBlock(13), ErrBlockNotSequential)
 }
 
 func TestSequencer_CanIncludeLocalTx_and_InstanceHooks(t *testing.T) {
 	s, _, _ := newSequencerForTest(compose.PeriodID(7), compose.SuperblockNumber(8), mkSettled(2, 20))
 
-	// No pending block -> false, NoPendingBlock
+	// No pending block -> false, ErrNoPendingBlock
 	ok, err := s.CanIncludeLocalTx()
-	require.ErrorIs(t, err, NoPendingBlock)
+	require.ErrorIs(t, err, ErrNoPendingBlock)
 	assert.False(t, ok)
-	assert.ErrorIs(t, err, NoPendingBlock)
 
 	// Open block
 	require.NoError(t, s.BeginBlock(21))
@@ -76,14 +80,14 @@ func TestSequencer_CanIncludeLocalTx_and_InstanceHooks(t *testing.T) {
 	assert.True(t, ok)
 
 	// Start instance -> now blocked
-	var id compose.InstanceID = compose.InstanceID{1}
+	id := compose.InstanceID{1}
 	require.NoError(t, s.OnStartInstance(id, s.PeriodID, compose.SequenceNumber(1)))
 	ok, err = s.CanIncludeLocalTx()
 	require.NoError(t, err)
 	assert.False(t, ok)
 
 	// Wrong decided id -> mismatch
-	assert.ErrorIs(t, s.OnDecidedInstance(compose.InstanceID{2}), ErrActiveInstanceMismatch)
+	require.ErrorIs(t, s.OnDecidedInstance(compose.InstanceID{2}), ErrActiveInstanceMismatch)
 
 	// Correct decided id -> unblocks
 	require.NoError(t, s.OnDecidedInstance(id))
@@ -92,7 +96,7 @@ func TestSequencer_CanIncludeLocalTx_and_InstanceHooks(t *testing.T) {
 	assert.True(t, ok)
 
 	// No active instance now
-	assert.ErrorIs(t, s.OnDecidedInstance(id), ErrNoActiveInstance)
+	require.ErrorIs(t, s.OnDecidedInstance(id), ErrNoActiveInstance)
 }
 
 func TestSequencer_EndBlock_seals_and_updates_head(t *testing.T) {
@@ -100,7 +104,7 @@ func TestSequencer_EndBlock_seals_and_updates_head(t *testing.T) {
 
 	require.NoError(t, s.BeginBlock(31))
 	// Seal mismatch
-	assert.ErrorIs(t, s.EndBlock(t.Context(), mkHeader(32)), ErrBlockSealMismatch)
+	require.ErrorIs(t, s.EndBlock(t.Context(), mkHeader(32)), ErrBlockSealMismatch)
 
 	// Seal ok
 	require.NoError(t, s.EndBlock(t.Context(), mkHeader(31)))
@@ -119,7 +123,7 @@ func TestSequencer_EndBlock_rejects_active_instance(t *testing.T) {
 	id := compose.InstanceID{9}
 	require.NoError(t, s.OnStartInstance(id, s.PeriodID, compose.SequenceNumber(1)))
 
-	assert.ErrorIs(t, s.EndBlock(t.Context(), mkHeader(31)), ErrActiveInstanceExists)
+	require.ErrorIs(t, s.EndBlock(t.Context(), mkHeader(31)), ErrActiveInstanceExists)
 
 	require.NoError(t, s.OnDecidedInstance(id))
 	require.NoError(t, s.EndBlock(t.Context(), mkHeader(31)))
@@ -135,7 +139,7 @@ func TestSequencer_EndBlock_triggers_prev_period_settlement(t *testing.T) {
 
 	// Period rolls to 10 while block is open; no immediate prover call due to pending block
 	require.NoError(t, s.StartPeriod(t.Context(), compose.PeriodID(10), compose.SuperblockNumber(11)))
-	assert.Len(t, p.calls, 0)
+	assert.Empty(t, p.calls)
 
 	// Seal the block → should trigger settlement for period 9 with sb target (11-1)=10
 	require.NoError(t, s.EndBlock(t.Context(), mkHeader(41)))
@@ -222,8 +226,10 @@ func TestSequencer_AdvanceSettledState_monotonic(t *testing.T) {
 	s, _, _ := newSequencerForTest(compose.PeriodID(1), compose.SuperblockNumber(2), mkSettled(1, 5))
 	// No update for same number
 	s.AdvanceSettledState(mkSettled(1, 5))
+	assert.Equal(t, compose.SuperblockNumber(1), s.SettledState.SuperblockNumber)
 	// Advance forward
 	s.AdvanceSettledState(mkSettled(2, 6))
+	assert.Equal(t, compose.SuperblockNumber(2), s.SettledState.SuperblockNumber)
 }
 
 func TestSequencer_Rollback_rejects_if_mismatch(t *testing.T) {
@@ -280,7 +286,7 @@ func TestSequencer_OnStartInstance_validations(t *testing.T) {
 		s, _, _ := newSequencerForTest(compose.PeriodID(3), compose.SuperblockNumber(4), mkSettled(1, 30))
 		// No BeginBlock
 		err := s.OnStartInstance(compose.InstanceID{1}, s.PeriodID, compose.SequenceNumber(1))
-		require.ErrorIs(t, err, NoPendingBlock)
+		require.ErrorIs(t, err, ErrNoPendingBlock)
 	})
 
 	t.Run("rejects when period mismatch (higher)", func(t *testing.T) {
@@ -303,15 +309,27 @@ func TestSequencer_OnStartInstance_validations(t *testing.T) {
 		// First instance with seq=1
 		require.NoError(t, s.OnStartInstance(compose.InstanceID{4}, s.PeriodID, compose.SequenceNumber(1)))
 		// Cannot start another instance while active
-		require.ErrorIs(t, s.OnStartInstance(compose.InstanceID{5}, s.PeriodID, compose.SequenceNumber(1)), ErrActiveInstanceExists)
+		require.ErrorIs(
+			t,
+			s.OnStartInstance(compose.InstanceID{5}, s.PeriodID, compose.SequenceNumber(1)),
+			ErrActiveInstanceExists,
+		)
 		// Finish current
 		require.NoError(t, s.OnDecidedInstance(compose.InstanceID{4}))
 		// Reject the same sequence number
-		require.ErrorIs(t, s.OnStartInstance(compose.InstanceID{6}, s.PeriodID, compose.SequenceNumber(1)), ErrLowSequencerNumber)
+		require.ErrorIs(
+			t,
+			s.OnStartInstance(compose.InstanceID{6}, s.PeriodID, compose.SequenceNumber(1)),
+			ErrLowSequencerNumber,
+		)
 		// Accept the higher sequence number
 		require.NoError(t, s.OnStartInstance(compose.InstanceID{7}, s.PeriodID, compose.SequenceNumber(2)))
 		require.NoError(t, s.OnDecidedInstance(compose.InstanceID{7}))
 		// Reject the lower sequence number
-		require.ErrorIs(t, s.OnStartInstance(compose.InstanceID{6}, s.PeriodID, compose.SequenceNumber(1)), ErrLowSequencerNumber)
+		require.ErrorIs(
+			t,
+			s.OnStartInstance(compose.InstanceID{6}, s.PeriodID, compose.SequenceNumber(1)),
+			ErrLowSequencerNumber,
+		)
 	})
 }

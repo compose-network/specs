@@ -1,0 +1,67 @@
+{
+  "$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint/main/schema/markdownlint-config-schema.json",
+  "default": true,
+  "MD001": true,
+  "MD003": {
+    "style": "atx"
+  },
+  "MD004": {
+    "style": "dash"
+  },
+  "MD007": {
+    "indent": 2
+  },
+  "MD009": {
+    "br_spaces": 2,
+    "list_item_empty_lines": false
+  },
+  "MD010": {
+    "code_blocks": false
+  },
+  "MD012": {
+    "maximum": 2
+  },
+  "MD013": false,
+  "MD024": {
+    "siblings_only": true
+  },
+  "MD025": {
+    "level": 1
+  },
+  "MD026": {
+    "punctuation": ".,;:!"
+  },
+  "MD029": {
+    "style": "ordered"
+  },
+  "MD033": false,
+  "MD034": true,
+  "MD035": {
+    "style": "---"
+  },
+  "MD036": false,
+  "MD041": false,
+  "MD044": {
+    "names": [
+      "Compose",
+      "Ethereum",
+      "Go",
+      "Golang",
+      "SCP",
+      "SBCP"
+    ],
+    "code_blocks": false
+  },
+  "MD046": {
+    "style": "fenced"
+  },
+  "MD048": {
+    "style": "backtick"
+  },
+  "MD049": {
+    "style": "underscore"
+  },
+  "MD050": {
+    "style": "asterisk"
+  }
+}
