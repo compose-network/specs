@@ -181,6 +181,7 @@ func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
 	defer s.mu.Unlock()
 
 	if s.PendingBlock != nil {
+		s.logger.Error().Msg("Block already open number is " + fmt.Sprint(s.PendingBlock.Number))
 		return ErrBlockAlreadyOpen
 	}
 
