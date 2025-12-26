@@ -264,14 +264,17 @@ func (s *sequencer) EndBlock(ctx context.Context, b BlockHeader) error {
 	s.mu.Lock()
 	if s.PendingBlock == nil {
 		s.mu.Unlock()
+		fmt.Println("No pending block to end")
 		return NoPendingBlock
 	}
 	if s.PendingBlock.Number != b.Number {
 		s.mu.Unlock()
+		fmt.Println("Block seal mismatch:", s.PendingBlock.Number, b.Number)
 		return ErrBlockSealMismatch
 	}
 	if s.ActiveInstanceID != nil {
 		s.mu.Unlock()
+		fmt.Println("Active instance exists, cannot end block")
 		return ErrActiveInstanceExists
 	}
 
