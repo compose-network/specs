@@ -221,6 +221,10 @@ func (s *sequencer) OnStartInstance(id compose.InstanceID, periodID compose.Peri
 	}
 
 	if s.PendingBlock.PeriodID != periodID {
+		s.logger.Error().
+			Uint64("expected_period_id", uint64(s.PendingBlock.PeriodID)).
+			Uint64("got_period_id", uint64(periodID)).
+			Msg("Instance period ID does not match current block period ID")
 		return ErrPeriodIDMismatch
 	}
 
