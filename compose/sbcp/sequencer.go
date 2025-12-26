@@ -286,6 +286,7 @@ func (s *sequencer) EndBlock(ctx context.Context, b BlockHeader) error {
 	settlementPeriod := s.PeriodID - 1
 	settlementSuperblock := s.TargetSuperblockNumber - 1
 
+	fmt.Println("shota ending here", time.Now())
 	s.PendingBlock = nil
 	s.Head = b.Number
 
@@ -338,6 +339,7 @@ func (s *sequencer) Rollback(
 	}
 
 	// Discard current block and active instance
+	fmt.Println("shota ending here too", time.Now())
 	s.PendingBlock = nil
 	s.ActiveInstanceID = nil
 	s.Head = s.SettledState.BlockHeader.Number
