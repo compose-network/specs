@@ -176,7 +176,7 @@ func (s *sequencer) startSettlement(ctx context.Context, periodID compose.Period
 
 // BeginBlock is a hook called at the start of a new L2 block.
 func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
-	fmt.Println("BeginBlock called with blockNumber:", blockNumber, "Current time", time.Now())
+	s.logger.Error().Msg("BeginBlock called with blockNumber:" + fmt.Sprint(blockNumber) + " Current time " + time.Now().String())
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -260,7 +260,7 @@ func (s *sequencer) OnDecidedInstance(id compose.InstanceID) error {
 }
 
 func (s *sequencer) EndBlock(ctx context.Context, b BlockHeader) error {
-	fmt.Println("EndBlock called with blockNumber:", b.Number, "Current time", time.Now())
+	s.logger.Info().Msg("EndBlock called with blockNumber:" + fmt.Sprint(b.Number) + " Current time " + time.Now().String())
 	s.mu.Lock()
 	if s.PendingBlock == nil {
 		s.mu.Unlock()
