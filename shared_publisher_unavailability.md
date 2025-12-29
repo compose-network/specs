@@ -226,6 +226,12 @@ If SP disconnects during an active SCP instance:
 4. Re-enable local transaction processing
 5. Transition to Solo Mode
 
+> [!NOTE]
+> This approach has a known limitation: if the SP fails after a sequencer has voted `Vote(true)` but before receiving
+> `Decided`, the sequencer must abort locally despite potentially valid votes from other chains. This is inherent to
+> 2PC's lack of crash-fault tolerance for the coordinator. Future protocol versions may address this with 3PC or similar
+> mechanisms.
+
 ## Recovery Protocol
 
 ### Recovery Trigger
