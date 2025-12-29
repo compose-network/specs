@@ -1,6 +1,8 @@
 # Shared Publisher Unavailability <!-- omit from toc -->
 
-This document specifies the expected behavior of Compose rollups when the Shared Publisher (SP) is unavailable. It defines a dual-mode operation model that allows rollups to maintain liveness for local transactions while gracefully degrading cross-chain functionality.
+This document specifies the expected behavior of Compose rollups when the Shared Publisher (SP) is unavailable. It
+defines a dual-mode operation model that allows rollups to maintain liveness for local transactions while gracefully
+degrading cross-chain functionality.
 
 ## Table of Contents <!-- omit from toc -->
 
@@ -39,11 +41,12 @@ This document specifies the expected behavior of Compose rollups when the Shared
 
 ### Problem Statement
 
-The current implementation requires rollup nodes (op-geth) to establish SP connection before producing blocks. This creates:
+The current implementation requires rollup nodes (op-geth) to establish SP connection before producing blocks. This
+creates:
 
 - A hard dependency that blocks startup and testing without SP infrastructure
 - A single point of failure affecting all network rollups
-- Degraded availability during SP maintenance or outages
+- Degraded availability during SP crashes or outages
 
 ### Design Rationale
 
@@ -61,18 +64,19 @@ The protocol specifications support independent local operation:
 > [!NOTE]
 > "Native Sequencers: one per rollup, who **builds L2 blocks at a self-chosen frequency**"
 > — Superblock Construction Protocol
-
+>
 > [!NOTE]
 > "Rollups may **keep independent L2 block times**; only period boundaries are common."
 > — Superblock Construction Protocol
 
-The fault model states "SP must be live to guarantee termination" — this constraint applies to cross-chain transaction completion, not local block production.
+The fault model states "SP must be live to guarantee termination" — this constraint applies to cross-chain transaction
+completion, not local block production.
 
 ## Operating Modes
 
 ### Mode Definitions
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────┐
 │                                                                │
 │   CONNECTED MODE                                               │
@@ -100,7 +104,7 @@ The fault model states "SP must be live to guarantee termination" — this const
 
 ### Mode Transitions
 
-```
+```text
                    ┌─────────────────┐
          ┌────────►│  CONNECTED MODE │◄────────┐
          │         └────────┬────────┘         │
@@ -125,7 +129,7 @@ The fault model states "SP must be live to guarantee termination" — this const
 
 ### Startup Sequence
 
-```
+```text
                          Sequencer Start
                                │
                                ▼
@@ -232,7 +236,7 @@ Recovery initiates when the sequencer receives a valid `StartPeriod` message fro
 
 The sequencer compares local derived state against SP-provided state:
 
-```
+```text
 Local State:  { periodID, targetSuperblock }
 SP State:     { StartPeriod.PeriodID, StartPeriod.SuperblockNumber }
 ```
@@ -241,7 +245,7 @@ SP State:     { StartPeriod.PeriodID, StartPeriod.SuperblockNumber }
 
 **Scenario 1: State Match**
 
-```
+```text
 Local:   Period 42, Superblock 142
 SP:      Period 42, Superblock 142
 
@@ -250,7 +254,7 @@ Action:  Resume Connected Mode
 
 **Scenario 2: Sequencer Behind**
 
-```
+```text
 Local:   Period 42, Superblock 142
 SP:      Period 44, Superblock 144
 
@@ -260,7 +264,7 @@ Action:  Sync forward to SP state
 
 **Scenario 3: Sequencer Ahead**
 
-```
+```text
 Timeline:
   Period 100: Last finalized (L1)
   Period 101: SP offline
@@ -338,12 +342,12 @@ Blocks produced in Solo Mode:
 
 ## Operational Limits
 
-| Parameter                | Value              | Notes                 |
-|--------------------------|--------------------|-----------------------|
-| Max Solo Mode Duration   | ~3 periods (~3.2h) | TBD; halt after limit |
-| Cross-chain Transactions | Rejected           | Clear error returned  |
-| Settlement               | Deferred           | Resumes on reconnect  |
-| Block Finality           | Unsafe only        | No L1 finalization    |
+| Parameter                | Value              | Notes                     |
+|--------------------------|--------------------|---------------------------|
+| Max Solo Mode Duration   | ~3 periods (~3.2h) | TBD; behavior after limit |
+| Cross-chain Transactions | Rejected           | Clear error returned      |
+| Settlement               | Deferred           | Resumes on reconnect      |
+| Block Finality           | Unsafe only        | No L1 finalization        |
 
 ## Security Considerations
 
