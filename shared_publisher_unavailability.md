@@ -265,6 +265,7 @@ Local:   Period 42, Superblock 142
 SP:      Period 44, Superblock 144
 
 Action:  Sync forward to SP state
+         Start settlement for previous ended periods
          Solo blocks remain valid (older period tag)
 ```
 
