@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	// Duration of a superblock period (10 Ethereum epochs)
+	// Duration of a superblock period (10 Ethereum epochs).
 	PeriodDuration = 10 * (32 * 12) * time.Second // 10 Ethereum epochs
 
 	// Allowed window (in number of periods) to submit a valid ZK proof for a superblock.
@@ -14,20 +14,26 @@ const (
 	ProofWindow = 24 * 7
 )
 
-type EthAddress [20]byte
-type TxHash [32]byte
-type SuperblockHash [32]byte
-type BlockHash [32]byte
-type StateRoot [32]byte
-type ChainID uint64
-type SessionID uint64
-type PeriodID uint64
-type SequenceNumber uint64
-type SuperblockNumber uint64
-type InstanceID [32]byte
+type (
+	EthAddress       [20]byte
+	TxHash           [32]byte
+	SuperblockHash   [32]byte
+	BlockHash        [32]byte
+	StateRoot        [32]byte
+	ChainID          uint64
+	SessionID        uint64
+	PeriodID         uint64
+	SequenceNumber   uint64
+	SuperblockNumber uint64
+	InstanceID       [32]byte
+)
 
 func (id InstanceID) String() string {
 	return hex.EncodeToString(id[:])
+}
+
+func (a EthAddress) String() string {
+	return "0x" + hex.EncodeToString(a[:])
 }
 
 type TransactionRequest struct {
