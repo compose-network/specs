@@ -186,6 +186,7 @@ func (s *sequencer) BeginBlock(blockNumber BlockNumber) error {
 	}
 
 	if s.Head != 0 && blockNumber != s.Head+1 {
+		s.logger.Error().Msg("Block number not sequential. Current head: " + fmt.Sprint(s.Head) + " new block: " + fmt.Sprint(blockNumber))
 		return ErrBlockNotSequential
 	}
 
