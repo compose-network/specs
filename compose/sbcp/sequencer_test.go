@@ -43,6 +43,39 @@ func TestSequencer_NewSequencer_initial_state(t *testing.T) {
 	assert.Empty(t, s.SealedBlockHead)
 }
 
+func TestSequencer_BeginBlock_genesis_allows_only_block_one(t *testing.T) {
+	// When Head=0 (genesis), only block 1 should be allowed
+	s, _, _ := newSequencerForTest(compose.PeriodID(1), compose.SuperblockNumber(1), mkSettled(0, 0))
+
+	// Block 1 should be allowed (Head=0 => next=1)
+	require.NoError(t, s.BeginBlock(1))
+	require.NotNil(t, s.PendingBlock)
+	assert.Equal(t, BlockNumber(1), s.PendingBlock.Number)
+}
+
+func TestSequencer_BeginBlock_genesis_rejects_arbitrary_block(t *testing.T) {
+	// When Head=0, arbitrary block numbers should be rejected
+	s, _, _ := newSequencerForTest(compose.PeriodID(1), compose.SuperblockNumber(1), mkSettled(0, 0))
+
+	// Block 2 should fail when Head=0 (expected: 1)
+	require.ErrorIs(t, s.BeginBlock(2), ErrBlockNotSequential)
+
+	// Block 1000 should also fail
+	require.ErrorIs(t, s.BeginBlock(1000), ErrBlockNotSequential)
+}
+
+func TestSequencer_BeginBlock_nonzero_head_requires_next(t *testing.T) {
+	// When Head=48, only block 49 should be allowed
+	s, _, _ := newSequencerForTest(compose.PeriodID(5), compose.SuperblockNumber(6), mkSettled(3, 48))
+
+	// Block 48 should fail (Head=48 => next must be 49)
+	require.ErrorIs(t, s.BeginBlock(48), ErrBlockNotSequential)
+
+	// Block 49 should succeed
+	require.NoError(t, s.BeginBlock(49))
+	assert.Equal(t, BlockNumber(49), s.PendingBlock.Number)
+}
+
 func TestSequencer_BeginBlock_ok_and_errors(t *testing.T) {
 	s, _, _ := newSequencerForTest(compose.PeriodID(5), compose.SuperblockNumber(6), mkSettled(3, 10))
 
