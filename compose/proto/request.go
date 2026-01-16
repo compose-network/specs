@@ -2,7 +2,7 @@ package proto
 
 // TransactionsByChain returns transactions grouped by chain ID.
 // The key is the chain ID, value is the list of raw transaction bytes.
-// Returns nil if receiver is nil.
+// Returns nil if the receiver is nil.
 func (x *XTRequest) TransactionsByChain() map[uint64][][]byte {
 	if x == nil {
 		return nil
