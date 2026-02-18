@@ -1,0 +1,806 @@
+
+# Universal Shared Bridge for OP Chains  
+
+The Universal Shared Bridge for OP Chains enables seamless asset transfers between Ethereum (L1) and any supporting OP L2, as well as directly between OP L2s. It leverages canonical custody on any chain, minting of "ComposeableERC20" (CET) tokens to represent bridged assets on L2s, and supports secure burn/mint logic for moving assets between L2s. All mint/burn operations are exclusively handled by the bridge contracts, ensuring safety. The bridge employs OP-Succinct proof mechanisms for L1 verifications and introduces efficient message-based transfers for L2↔L2 bridging, with formal post-transfer settlement. 
+
+##  Objectives & Authoritative Requirements
+
+1. **L1 ETH Custody:** Ethereum (L1) is the escrow for **ETH**.  
+2. **General Token Custody:** Any chain can be the escrow for canonical tokens.
+3. **L1→L2 Representation:** Depositing an L1 ERC-20 to any OP L2 mints a **ComposeableERC20 (CET)** on that L2.  
+4. **L2↔L2 Bridging:** The bridge supports moving both **native ERC-20** and **CET** between OP L2s. 
+5. **L2↔L2 (ERC-20):** If the source asset is a **native ERC-20** on L2, it is **Locked** on the source L2 and a **CET is Minted** on the destination L2.  
+6. **L2↔L2 (CET):** If the source asset is a **CET**, it is **Burned** on the source L2 and **Minted** on the destination L2.  
+7. **L2→L1 Redemption:** Any CET can always be redeemed to **unlock the collateral on L1**.  
+8. **Proof System:** The design **builds on OP-Succinct** (validity proofs). L1 verifications rely on **per-L2 finalized post roots**
+9. **Mint Authority / Safety:** Only **bridge contracts** may mint or burn **CET**; no external mint paths.  
+10. **Exit Logic (proof-based paths):** Use the **same exit logic as OP-Succinct**: prove claims against a chain’s **post root**, then an **MPT/storage proof** to the chain’s **Outbox/Exit root**, then a **Merkle inclusion** for the exit record.  
+11. **Replay Protection:** Messages can be consumed only once. Any replay will be ignored.  
+12. **Inter-L2 Fast Path:** For **L2↔L2** transfers, the destination **mints on receipt of a bridge message** (no proof verification at claim time). **Later settlement** is done simultaneously via aggregated proofs (out of scope here).
+13. **Native token support**: If a CoreComposeable (ICET-compatible native token) exists for the asset on a destination chain, the bridge mints to it; otherwise it deploys a WrappedComposeable and mints there. Holders can later redeem WrappedCET into CoreComposeable on that chain via the bridge.
+
+---
+# ComposeableERC20
+
+ An ERC20 wrapper native to the bridge. Inspired by `OptimismSuperChainERC20`, this is an ERC7802 compliant token for cross-chain transfers.
+The code snippet below describe the main functionality.
+
+```solidity
+interface ICET is ERC20, IERC7802 {
+    /// @notice Returns the remote chain ID where this token was originally minted.
+    function getRemoteChainID() external view returns (uint256);
+
+    /// @notice Returns the remote asset address corresponding to this token on the remote chain.
+    function getRemoteAsset() external view returns (address);
+}
+
+abstract contract ComposeableERC20 is ICET {
+    /// @param _to     Address to mint tokens to.
+    /// @param _amount Amount of tokens to mint.
+    function crosschainMint(address _to, uint256 _amount) external {
+        if (msg.sender != COMPOSE_TOKEN_BRIDGE) revert Unauthorized();
+
+        _mint(_to, _amount);
+
+        emit CrosschainMint(_to, _amount, msg.sender);
+    }
+
+    /// @param _from   Address to burn tokens from.
+    /// @param _amount Amount of tokens to burn.
+    function crosschainBurn(address _from, uint256 _amount) external {
+        if (msg.sender != COMPOSE_TOKEN_BRIDGE) revert Unauthorized();
+
+        _burn(_from, _amount);
+
+        emit CrosschainBurn(_from, _amount, msg.sender);
+    }
+```
+
+### Composeable Flavors and Addressing
+
+There are two flavors of ComposeableERC20 implementations that satisfy the `ICET` interface:
+- `CoreComposeable`: a native token implementation that integrates the CET cross-chain gates. Deployed and owned by the original token owner. Local `mint`/`burn` are owner-gated; `crossChainMint`/`crossChainBurn` are bridge-gated. `getRemoteChainID()` should return the current chain ID and `getRemoteAsset()` should simply return the current deployed token address. Since `CoreComposeable` are canonical representation of the token.
+- `WrappedComposeable` (WrappedCET): a bridge-deployed wrapper used when no CoreComposeable exists on the destination chain, or if on the source chain the bridged token isn't `ICET` compatible.
+
+All `ICET` contract implementation are always deployed at the same address across chains via CRATE2.
+
+
+
+### Wrapped CET Redemption (local conversion)
+
+```solidity
+/// @notice Convert WrappedComposeable (bridge wrapper) into CoreComposeable on the same chain.
+/// @dev Burns wrapped via crossChainBurn and mints core via crossChainMint to the caller.
+function redeemWrappedCET(
+    address wrappedCET,
+    address coreCET,
+    uint256 amount
+) external {
+    require(wrappedCET != address(0) && coreCET != address(0), "zero address");
+    require(ICET(wrappedCET).remoteAsset() == coreCET, "asset mismatch");
+    // Burn wrapped and mint core using bridge-only cross-chain gates
+    ICET(wrappedCET).crossChainBurn(msg.sender, amount);
+    ICET(coreCET).crossChainMint(msg.sender, amount);
+    emit WrappedCETRedeemed(wrappedCET, coreCET, msg.sender, amount);
+}
+```
+
+### Minting CET on the fly
+```solidity
+// Factory for wrapped tokens
+interface ICETFactory { // Bridge-side: deploys WrappedComposeable
+    function predictAddress(address remoteAsset) external view returns (address predicted);
+    function deployIfAbsent(
+        address remoteAsset,
+        uint256 remoteChain,
+        uint8 decimals,
+        string calldata name,
+        string calldata symbol
+    ) external onlyBridge returns (address deployed);
+    function computeSalt(address remoteAsset) external pure returns (bytes32);
+}
+
+ICETFactory  public cetFactory;    // deployer/predictor for WrappedComposeable
+
+function ensureCETAndMint(
+    address remoteAsset,
+    uint256 remoteChain
+    string calldata name,
+    string calldata symbol,
+    uint8 decimals,
+    address to,
+    uint256 amount
+) internal returns (address cet) {
+    // 1) If a CoreComposeable is already deployed for this asset, mint there
+    if (remoteAsset.code.length > 0 && isCoreComposeable(remoteAsset)) {
+        ICET(remoteAsset).crossChainMint(to, amount);
+        return remoteAddress;
+    }
+
+    // 2) Otherwise, deploy or use the WrappedComposeable at its deterministic address
+    address predicted = cetFactory.predictAddress(remoteAsset);
+    cet = cetFactory.deployIfAbsent(remoteAsset, remoteChain, decimals, name, symbol);
+    require(cet == predicted, "CET address mismatch");
+
+    // 3) Cross-chain mint via bridge-only path on the wrapper
+    ICET(cet).crossChainMint(to, amount);
+    return cet;
+}
+```
+___
+
+# L2↔L2 Bridge
+
+
+### Entities & Contracts
+-   **ComposeL2ToL2Bridge (per L2)**
+    Handles: locking native ERC-20, burning CET, mailbox write/read, and
+    minting (via token's `onlyBridge` gate when called from the bridge
+    context).
+
+    It should be deployed with CREATE2 so it has the same address on all chains.
+
+-   **Mailbox (per L2)**
+    Minimal append-only message bus with read-once semantics per
+    `(chainSrc, recipient, sessionId, label)`.
+
+    -   `write(chainId, account, sessionId, label, payload)`\
+    -   `read(chainId, account, sessionId, label) → bytes`
+        (consumes/marks delivered)
+
+-   **Supported Token types**
+
+    -   **Native ERC-20** on an L2 (not minted by bridge).
+    -   **CET** (ComposeableERC20Token) --- canonical L2 representation
+        of L1/L2 asset.
+        -   `mint`/`burn` are **restricted** to `msg.sender == Bridge`.
+
+
+###  Mailbox
+
+Mailbox is a container of `Messages` divided into 2 boxes: 
+- `Inbox` that has messages consumed by `Read()` function
+- `Outbox` that has messages pushed into by `Write()` function.
+
+
+``` solidity
+  struct Message {
+    MessageHeader header,
+    bytes payload
+  }
+
+// Header for message. Its hash can serve as the message Identifier.
+    struct MessageHeader {
+        uint256 sessionId; // 16 bytes of version + 240 bytes of value chosen by the user
+        uint256 chainSrc;  // chain ID where the message was sourced from
+        uint256 chainDest; // chain ID of target destination
+        address sender;    // The address on `chainSrc` initiating the message 
+        address receiver;  // The address on `chainDest` receiving the message
+        string label;      // Helps decipher the payload.
+    }    
+
+interface IMailbox {
+    // `sender` writes to the OUTBOX a message to be relayed to `reciever` on `chainDest`
+    function write(
+        Message calldata message
+    ) external onlyBridge;
+
+    // `receiver` reads from the INBOX a message relayed by `sender` from `srcChain`
+    function read(
+        MessageHeader calldata header
+    ) external onlyBridge returns (bytes memory);
+
+    // `coordinator` relays a message written to another chain's outbox
+    function putInbox(
+        Message calldata message
+    ) external onlyCoordinator
+}
+```
+
+Only the canonical bridge contract should be allowed to access `read` and `write` function.
+A special account called the `coordinator` can help relaying those messages across chains.
+
+#### SessionID
+
+A session begins with a payload baring message from chain *A* to chain *B* and ends with an ACK message from chain *B* to chain *A*. It always consists of only those two messages.
+
+`SessionID` is a 256 bit variable where the first 16 bits are used for version and the last 240 bits are the session identifier. It should always be unique for each session.
+
+Recommended (optional) way of generating `sessionID` on the client side:
+```
+(uint256(version) << 240) | (uint256(keccak256(concatenate_bytes(
+    sender,  
+    nonce,  
+    blockNumber,  
+    salt
+))) >> 16)
+```
+where sender is 160 bytes, nonce 32 bits, blocknumber is 64 bits, salt is 32 bits.
+
+#### Replay Protection
+
+The `Read` function will return an error if it will be invoked more than once with the same `MessageHeader`
+
+
+------------------------------------------------------------------------
+
+
+###  Payload Schema
+
+The bridge supports 3 payload types that have the following labels on the *Mailbox*:
+
+- `SEND_TOKENS`
+- `SEND_ETH`
+- `ACK`
+
+#### SEND Payloads
+
+`SEND_TOKENS` payloads use a single canonical ABI encoding:
+
+    abi.encode(
+      uint256 remoteChainID  // The native chain of the transferred asset
+      address remoteAsset,   // canonical asset address on the escrow chain
+      uint256 amount         // amount
+      string  name           // metadata
+      string symbol          // metadata
+      uint8 decimals         // metadata
+    )
+
+
+#### ACK payload:
+
+    - `abi.encode(tokenAddress, amount)` for successful operation
+    - `{}` for failure
+
+------------------------------------------------------------------------
+
+
+### Source L2: bridge entrypoints
+
+It is important to note that 
+
+``` solidity
+/// Lock native ERC-20 on source and send SEND message
+function bridgeERC20To(
+    uint256 chainDest,      // Destination ChainID
+    address tokenSrc,       // native ERC-20 on source L2
+    uint256 amount,
+    address receiver,      // address on destination L2
+    uint256 sessionId
+) external;
+
+/// CrosschainBurn CET on source and send SEND message
+function bridgeCETTo(
+    uint256 chainDest,         // Destination ChainID
+    address cetTokenSrc,       // CET on source L2
+    address remoteAssetAddress // original 
+    uint256 amount,
+    address receiver,          // address on destination L2
+    uint256 sessionId
+) external;
+
+
+
+/// @notice Lock native ETH on source and send SEND message
+/// @param sessionId Used for mailbox session tracking
+/// @param chainDest The target ChainID for bridging ETH
+/// @param receiver The recipient address on the destination L2
+function bridgeEthTo(
+    uint256 sessionID
+    uint256 chainDest
+    address receiver,
+) external payable
+```
+
+### Destination L2: recipient claim
+
+``` solidity
+/// Process funds reception (crossChainMints) on the destination chain
+/// @param msgHeader the identifier you need to locate the message
+/// @return amount amount of tokens transferred
+function receiveTokens(
+    MessageHeader msgHeader
+) external returns (address token, uint256 amount);
+
+
+/// @notice Process ETH reception on destination chain
+/// @dev Only the intended receiver can call this to claim bridged ETH.
+/// @param msgHeader the identifier used to locate the message
+/// @return amount Amount of ETH transferred
+function receiveETH(
+    MessageHeader msgHeader
+) external returns (uint256 amount)
+```
+
+> Note: `receiveTokens` requires `msg.sender == msgHeader.receiver`
+
+------------------------------------------------------------------------
+
+
+### Source L2 --- Execution Flow & Pseudocode of Bridge Contract
+
+### CheckAck
+```solidity
+/**
+ * @notice Checks for the ACK message in the mailbox and verifies it matches the expected parameters.
+ * @dev This function constructs the expected MessageHeader for the ACK, reads the ACK payload from the mailbox,
+ *      and ensures the returned payload matches the expected token address and amount.
+ *      Reverts if the ACK is missing or contains unexpected data.
+ * @param sessionID The session identifier for the bridging operation.
+ * @param ackChainSrc The chain ID where the ACK message originated (source chain).
+ * @param ackReciever The address expected as the receiver in the ACK.
+ * @param ackSender The address expected as the sender in the ACK.
+ * @param tokenSrc The ERC20 token address sent in the bridging operation.
+ * @param amount The amount of tokens bridged and expected to be confirmed by the ACK.
+ */
+function checkAck(
+    uint256 sessionID,
+    uint256 ackChainSrc,
+    address ackReciever,
+    address ackSender,
+    address tokenSrc,
+    uint256 amount
+) private {
+    // Construct expected MessageHeader for the ACK
+    MessageHeader memory ackHeader = MessageHeader({
+        sessionId: sessionID,
+        chainSrc: ackChainSrc,
+        chainDest: block.chainid,
+        sender: ackSender,
+        receiver: ackReciever,
+        label: "ACK"
+    });
+
+    // Read ACK payload from mailbox
+    bytes memory ackPayload = mailbox.read(ackHeader);
+
+    if (ackPayload.length == 0) {
+        revert("Unsuccessful operation");
+    }
+
+    // The payload is expected to contain abi.encode(address tokenSrc, uint256 amount).
+    require(ackPayload.length == 32 + 32, "ACK payload malformed");
+
+    (address ackTokenSrc, uint256 ackAmount) = abi.decode(ackPayload, (address, uint256));
+
+    require(ackTokenSrc == tokenSrc, "ACK tokenSrc mismatch");
+    require(ackAmount == amount, "ACK amount mismatch");
+}
+```
+
+###  `bridgeERC20To`
+
+``` solidity
+// bridges all non CET ERC-20 tokens
+function bridgeERC20To(
+    uint256 chainDest,
+    address tokenSrc,
+    uint256 amount,
+    address receiver,
+    uint256 sessionId
+) external {
+    // for implementation we need to make sure this is the actual human inititator
+    address sender = msg.sender;
+
+    IERC20(tokenSrc).transferFrom(sender, address(this), amount);
+    emit TokensLocked(tokenSrc, sender, amount);
+
+    string memory name = ERC20(tokenSrc).name();
+    string memory symbol = ERC20(tokenSrc).symbol();
+    uint8 decimals = ERC20(tokenSrc).decimals();
+    bytes memory payload = abi.encode(block.chainid, tokenSrc, amount, name, symbol, decimals);
+
+    mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
+    // performs a mailbox read for an "ACK" labeled message.
+    checkAck(sessionID, chainDest, receiver, sender, tokenSrc, amount)
+
+    emit MailboxWrite(chainDest, receiver, sessionId, "SEND_TOKEN");
+
+    bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND_TOKEN"));
+    emit TokensBridged(chainDest, sender, receiver, tokenSrc, amount, sessionId, messageId);
+}
+```
+
+###  `bridgeCETTo`
+
+``` solidity
+function bridgeCETTo(
+    uint256 chainDest,
+    address cetTokenSrc,
+    uint256 amount,
+    address receiver,
+    uint256 sessionId
+) external {
+    address sender = msg.sender;
+
+    ICET(cetTokenSrc).crossChainBurn(sender, amount);
+    emit CETBurned(cetTokenSrc, sender, amount);
+
+    uint256 remoteChainID = ICET(cetTokenSrc).remoteChainID();
+    address remoteAsset = ICET(cetTokenSrc).remoteAsset(); 
+    string memory name = ICET(cetTokenSrc).name();
+    string memory symbol = ICET(cetTokenSrc).symbol();
+    uint8 decimals = ICET(cetTokenSrc).decimals();
+    bytes memory payload = abi.encode(remoteChainID, remoteAsset, amount, name, symbol, decimals);
+
+    mailbox.write(chainDest, receiver, sessionId, "SEND_TOKEN", payload);
+    checkAck(sessionID, chainDest, receiver, sender, cetTokenSrc, amount)
+
+    emit MailboxWrite(chainDest, receiver, sessionId, "SEND_TOKEN");
+
+    bytes32 messageId = keccak256(abi.encodePacked(chainDest, receiver, sessionId, "SEND_TOKEN"));
+    emit TokensBridged(chainDest, sender, receiver, cetTokenSrc, amount, sessionId, messageId);
+}
+```
+
+------------------------------------------------------------------------
+
+###  Destination L2 --- Claim Flow
+``` solidity
+function receiveTokens(
+    MessageHeader msgHeader
+    // the following parameters are only needed if the proper CET token wasn't deployed
+) external returns (address token, uint256 amount) {
+    require(msg.sender == msgHeader.receiver, "Only receiver can claim");
+    require(msgHeader.chainDest == block.chainid, "Wrong destination chain");
+    require(msgHeader.label == "SEND_TOKEN", "Must read a SEND_TOKEN message")
+
+    // 1) Read and consume the SEND message
+    bytes memory m = mailbox.read(MessageHeader(sessionIDchainSrc, receiver, sessionId, "SEND_TOKEN");
+    if (m.length == 0) revert("No SEND_TOKEN message");
+
+    uint256 remoteChainID;
+    address remoteAsset;
+
+    (remoteChainID, remoteAsset, amount, name, symbol, decimals) =
+        abi.decode(m, (uint256, address, uint256, string, string, uint8));
+
+
+    // 2) RELEASE if native token is hosted & escrowed here, else MINT Composeable (Core if present, else WrappedCET)
+    if remoteChainID == block.chainid && IERC20(remoteAddress).balanceOf(address(this)) >= amount) {
+        // Release escrowed native tokens
+        require(IERC20(native).transfer(receiver, amount), "Native release failed");
+        token = native;
+    } else {
+        // Mint deterministic Composeable on this chain
+        // Metadata is useful in case WrappedCET not yet deployed.
+        token = ensureCETAndMint(remoteAsset, remoteChainId, name, symbol, decimals, receiver, amount)
+    }
+
+    // 3) ACK back to source
+    MessageHeader memory ackHeader = MessageHeader({
+        sessionId: msgHeader.sessionId,
+        chainSrc: msgHeader.chainDest,
+        chainDest: msgHeader.chainSrc,
+        sender: msgHeader.receiver,
+        receiver: msgHeader.sender,
+        label: "ACK"
+    });
+    Message memory ack = Message({
+        header: ackHeader
+        bytes: abi.encode(token.address, amount)
+    })
+
+    mailbox.write(ack);
+
+    emit TokensReceived(token, amount);
+    return (token, amount);
+}
+```
+
+
+
+
+----
+
+### ETH transfers
+
+Use [ETHLiquidity](https://specs.optimism.io/interop/eth-liquidity.html) with the `ComposeL2toL2Bridge`. `Mint` and `Burn` calls will simply insert and release liquidity from the pool.
+
+```solidity
+function bridgeEthTo(
+    uint256 sessionID
+    uint256 chainDest
+    address receiver,
+) external payable {
+    require(msg.value > 0, "No ETH sent");
+    // Precharge ETHLiquidity pool (escrow ETH)
+    ETHLiquidity.burn{value: msg.value}(msg.sender);
+    emit ETHLocked(msg.sender, msg.value);
+
+    // Write SEND_ETH message to mailbox for destination chain
+    // Message format: (uint256 remoteChainID, uint256 amount)
+    bytes memory payload = abi.encode(block.chainid, msg.value);
+    mailbox.write(
+        chainDest,
+        to,
+        sessionId,
+        "SEND_ETH",
+        payload
+    );
+
+    checkAck(sessionID, chainDest, receiver, msg.sender, address(0), amount)
+    emit ETHBridged(chainID, msg.sender, to, msg.value, sessionId, keccak256(abi.encodePacked(chainID, to, sessionId, "SEND_ETH")));
+}
+
+/// @notice Process ETH reception on destination chain
+/// @dev Only the intended receiver can call this to claim bridged ETH.
+/// @param msgHeader the identifier used to locate the message
+/// @return amount Amount of ETH transferred
+function receiveETH(
+    MessageHeader msgHeader
+) external returns (uint256 amount) {
+    require(msg.sender == msgHeader.receiver, "Only receiver can claim");
+    require(msgHeader.chainDest == block.chainid, "Wrong destination chain");
+    require(msgHeader.label == "SEND_ETH", "Must read a SEND_ETH message");
+
+    // Read and consume SEND_ETH message from mailbox
+    bytes memory m = mailbox.read(
+        MessageHeader(
+            msgHeader.chainSrc,
+            msgHeader.receiver,
+            msgHeader.sessionId,
+            "SEND_ETH"
+        )
+    );
+    if (m.length == 0) revert("No SEND_ETH message");
+
+    uint256 remoteChainID;
+    (remoteChainID, amount) = abi.decode(m, (uint256, uint256));
+
+    // Release ETH from the ETHLiquidity pool to the receiver
+    ETHLiquidity.mint{value: amount}(msg.sender);
+
+    // 3) ACK back to source
+    MessageHeader memory ackHeader = MessageHeader({
+        sessionId: msgHeader.sessionId,
+        chainSrc: msgHeader.chainDest,
+        chainDest: msgHeader.chainSrc,
+        sender: msgHeader.receiver,
+        receiver: msgHeader.sender,
+        label: "ACK"
+    });
+    Message memory ack = Message({
+        header: ackHeader
+        bytes: abi.encode(address(0), amount)
+    })
+
+    mailbox.write(ack);
+
+    emit ETHReceived(msg.sender, amount);
+    emit MailboxAckWrite(msgHeader.chainSrc, msgHeader.receiver, msgHeader.sessionId, "ACK");
+    return amount;
+}
+```
+
+
+
+
+------------------------------------------------------------------------
+
+### Safety & Replay
+
+-   **Mint authority:** CET enforces `onlyBridge` on `mint`/`burn`.
+-   **Replay protection:** `mailbox.read(...)` must be consume-once.
+-   **No registry needed:** CET address is computed deterministically
+    from L1 asset address.
+-   **ACK:** Ensures mailbox equivalency.
+
+------------------------------------------------------------------------
+
+###  End-to-End L2<->L2 Lifecycle
+
+1.  Sender calls `bridgeERC20To` or `bridgeCETTo` with sessionId.
+2.  Source bridge locks/burns + writes `"SEND_TOKENS"` with L1 asset address.
+3.  Receiver calls `receiveTokens`.
+4.  Destination bridge reads `"SEND_TOKENS"`, computes CET address from
+    `remoteAsset`, mints, writes `"ACK"`
+5.  ACK is read back by the bridge function.
+
+------------------------------------------------------------------------
+
+## L1 <-> L2 Bridge For native rollups.
+
+We need to utilize the current OP-contracts with minimal changes. Namely the `StandardBridge.sol`, `CrossDomainMessenger.sol`. 
+
+Currently an OP rollup manage the L1<->L2 bridge via `OptimismPortal2` contract. This utilizes an `ETHLockbox` contract that locks all deposited ETH. Each native rollups using the universal bridge will deploy its portal that will use a shared `ETHLockBox` and an `ERC20LockBox`. The `ERC20 The sharing of a single `LockBox` will ensure that funds deposited on any chain can be withdrawn via another chain.
+
+The `finalizeBridgeERC20` and `initiateBridgeERC20` calls in the birdge must be change so they will work with `ComposableERC20s`.
+
+The `OptimismPortal2` generate `TransactionDeposited` events, that are captured on OP-GETH and are relayed to the standard OP-Bridge contracts. The `StandardBridge:finalizeBridgeERC20` call must be changed so it will mint `ComposableERC20s`.
+
+`OptimismPortal` utilizes the [OPSuccinct design](https://succinctlabs.github.io/op-succinct/architecture.html#op-succinct-design) with the following changes:
+1. It also deposits tokens to an `ERC20LockBox
+2. It is universal across chains and should be owned by neutral actor.
+3. [TODO move validation rule from settlement doc]
+4. Withdrawal logic reuses the l2<->l2 defintions.
+
+As a result of the addition of `ERC20LockBox` the bridge contract on L1 shouldn't lock tokens.
+
+## L1<->L2 bridge for External rollups
+
+Currently Op-Succinct Sequencers pick up `TransactionDeposited` Events to relay bridge messages.
+They check the address of the contract that originated the event. And perform a ZK proof that the event was included in the `recieptsRoot`.
+
+In the case of an external rollup, a malicious wrapped sequencer may send a non backed log. This won't be ZK proven but it will still become part of the external rollup canonical state. 
+The result will be that the connection with the Universal Shared Bridge will be severed. The remedy for this is to have our bridge re-utilize the rollup's canonical `CrossDomainSequencer` and `OptimismPortal`.
+
+
+### ERC-20
+
+#### Deposits
+
+One needs to create `L1ComposeBridge.sol` that will live alongside the canonical `L1StandardBridge.sol`. It will use the canonical `L1CrossDomainMessenger`. For deposits of ERC20, use the same `initiateBridgeERC20` function as for native rollups. The `otherBridge` parameter should now point to the new `L2ComposeBridgeERC20.sol`. On the receiving side, within `L2ComposeBridgeERC20.sol`, the `finalizeBridgeERC20` function mints the wrapped `ComposeableERC20` tokens. Security is ensured by using the `onlyOtherBridge` modifier, together with the canonical `L2CrossDomainMessenger`.
+
+
+
+
+
+```mermaid
+flowchart TD
+    User[User]
+    L1CB[L1ComposeBridge]:::compose
+    L1XDM[L1CrossDomainMessenger]
+    L2XDM[L2CrossDomainMessenger]
+    L2CB[L2ComposeBridgeERC20]:::compose
+    ETHLB[ETHLockBox]:::compose-universal
+    ERC20LB[ERC20LockBox]:::compose-universal
+    CP[ComposePortal]:::compose
+    User -->|initiateBridgeERC20| L1CB
+    L1CB -->|sendMessage| L1XDM
+    L1CB -->|depositTransaction + value| CP
+    CP -->|LockETH| ETHLB
+    CP -->|LockERC20| ERC20LB
+    L1XDM -->|depositTransaction + data | OptimismPortal
+    OptimismPortal -->|TxDeposited event| op-node
+    op-node -->|deposit| op-geth
+    op-geth -->|relayMessage| L2XDM
+    L2XDM -->|finalizeBridgeERC20| L2CB
+    L2CB -->|mint ComposeableERC20| User
+
+    classDef compose fill:#ffd580,stroke:#b17600,stroke-width:2px;
+    classDef compose-universal fill:#ffe14d,stroke:#b17600,stroke-width:2px;
+```
+
+*Note: The components colored in yellow are custom compose contracts. The components in yellow are custom and universal. The components colored in purple belong to the external rollup's canonical deployment.*
+
+##### Key message flow
+- User triggers deposit on `L1ComposeBridge`
+- Message is sent through the canonical `L1CrossDomainMessenger`
+- Message is forwarded to `ComposePortal` that farther locks the ETH or tokens in the correct lockbox. 
+- Message forwarded it to `OptimismPortal` that creates a `TxDeposited` event observed by `op-node`.
+- Via a deposit transaction, message is received on L2 by `L2ComposeBridgeERC20` via the canonical `L2CrossDomainMessenger`
+- `L2ComposeBridgeERC20` mints the wrapped tokens using `finalizeBridgeERC20`
+- Security is enforced via `onlyOtherBridge` and the canonical messenger addresses
+
+
+##### Revised `initiateBridgeERC20 function
+
+If token isn't CET than don't lock it on the bridge. Forward it for locking on the new `ComposePortal` via direct call to 
+`depositTransaction`. It should be invoked the same way the `L1CrossDomainMessenger` invokes the call to `OptimismPortal` 
+with the addition of an actual ERC-20 transfer. If it is a CET token it can be burned and minted by the bridge as usual. 
+Should call `SendMessage` on the canonical messenger as usual.
+
+```solidity
+/// @notice Sends ERC20 tokens to a receiver's address on the other chain via the universal compose bridge flow.
+/// @param _localToken  Address of the ERC20 on this chain.
+/// @param _remoteToken Address of the corresponding token on the remote chain.
+/// @param _from        Address of the sender.
+/// @param _to          Address of the receiver.
+/// @param _amount      Amount of local tokens to deposit.
+/// @param _minGasLimit Minimum amount of gas that the bridge can be relayed with.
+/// @param _extraData   Extra data to be sent with the transaction.
+function _initiateBridgeERC20(
+    address _localToken,
+    address _remoteToken,
+    address _from,
+    address _to,
+    uint256 _amount,
+    uint32 _minGasLimit,
+    bytes memory _extraData
+)
+    internal
+{
+    require(msg.value == 0, "ComposeBridge: cannot send value");
+
+    if (_isComposeableERC20(_localToken)) {
+        // For CET tokens (ComposeableERC20), crossChainBurn/crossChainMint as usual.
+        require(
+            _isCorrectTokenPair(_localToken, _remoteToken),
+            "UniversalBridge: wrong remote token for ComposeableERC20"
+        );
+
+        IComposeableERC20(_localToken).crossChainBurn(_from, _amount);
+    } else {
+        // For non-CET tokens, forward the deposit via the ComposePortal 
+        // using depositTransaction, which locks the token in a lockbox.
+        IERC20(_localToken).safeTransferFrom(_from, address(composePortal), _amount);
+        IERC20(_localToken).approve(address(composePortal), _amount);
+
+        composePortal.depositTransaction(
+            _localToken,
+            _from,
+            _to,
+            _amount,
+            _extraData
+        );
+    }
+
+    // Emit the correct bridge event.
+    _emitERC20BridgeInitiated(_localToken, _remoteToken, _from, _to, _amount, _extraData);
+
+    // Send canonical cross-domain message to the remote bridge as usual.
+    messenger.sendMessage({
+        _target: address(otherBridge),
+        _message: abi.encodeWithSelector(
+            this.finalizeBridgeERC20.selector,
+            _remoteToken,
+            _localToken,
+            _from,
+            _to,
+            _amount,
+            _extraData
+        ),
+        _minGasLimit: _minGasLimit
+    });
+}
+```
+
+
+
+##### New ComposePortal
+
+Has the same logic as `OptimismPortal` but also locks ERC20s in a lockbox. 
+
+
+#### Withdrawals
+
+One must create a new `ComposePortal` (based on `OptimismPortal`) that has only the Withdrawal logic. It will wire in the [`OPSuccinctDisputeGame.sol`](https://github.com/succinctlabs/op-succinct/blob/ce454dd2f16c203437c9615680b0dc76b2a1b827/contracts/src/validity/OPSuccinctDisputeGame.sol) for its verification process. It will utilize the canonical `L1CrossDomainMessenger` to send funds to `L1ComposeBridge#finalizeBridgeERC20`, gaining security via `onlyOtherBridgeModifier`. 
+
+On the L2 side, the `L2ComposeBridge` via `initiateWithdrawal` and `bridgeERC20` will again send its message through the canonical `L2CrossDomainMessenger`. The target of the message, set by `initiateBridgeERC20`, should be the `L1ComposeBridge` address. 
+
+We should note `ComposePortal` should hold an `ERC20Lockbox` to support shared liquidity.
+
+```mermaid
+flowchart TD
+    User[User initiates withdraw on L2ComposeBridge]
+    L2CB[L2ComposeBridge]:::compose
+    L2XDM[L2CrossDomainMessenger]
+    ComposePortal[ComposePortal]:::compose
+    SP[Shared Publisher]:::compose-universal
+    DisputeGame[ComposeValidityDisputeGame]:::compose-universal
+    L1XDM[L1CrossDomainMessenger]
+    L1CB[L1ComposeBridge]:::compose
+
+    User -->|initiateWithdrawal / bridgeERC20| L2CB
+    L2CB -->|sendMessage| L2XDM
+    L2XDM -->|burns tokens| END
+    SP -->|feeds state root & proof| DisputeGame
+    ComposePortal -->|prove withdrawal via DisputeGame| DisputeGame
+    DisputeGame -->|withdrawal proven| ComposePortal
+    ComposePortal -->|sendMessage| L1XDM
+    L1XDM -->|finalizeBridgeERC20| L1CB
+
+    classDef compose fill:#ffd580,stroke:#b17600,stroke-width:2px;
+    classDef compose-universal fill:#ffe14d,stroke:#b17600,stroke-width:2px;
+```
+
+**Key message flow:**
+- User triggers a withdrawal via `L2ComposeBridge`.
+- The canonical `L2CrossDomainMessenger` transmits the withdrawal message to the `ComposePortal`.
+- `ComposePortal` leverages `OPSuccinctDisputeGame` for validity proof and holds funds in `ERC20Lockbox`.
+- Upon successful proof, `ComposePortal` sends a message through the canonical `L1CrossDomainMessenger` to `L1ComposeBridge`.
+- `L1ComposeBridge#finalizeBridgeERC20` completes the withdrawal, releasing funds to the user.
+- Security relies on `onlyOtherBridge` and proof verification via the dispute game.
+
+
+#### ERC20LockBox
+
+This keeps a simple `mapping(address token => uint256 amount)` per token.
+There should be complete isolation between different tokens.
+This should mean a malicious token can only break its own accounting without affetcting the others.
+
+
+### ETH
+
+Similar to ERC-20, but should *always* be used with a `ComposeableERC20` conversion when bridged from either direction.
