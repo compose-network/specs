@@ -1,19 +1,31 @@
-# Compose Spec Code
+# Compose
 
-This directory contains the Compose Specification library code.
+Rust implementation of the Compose protocol specification library.
 
-## Modules
- 
-- [compose.go](./compose.go): Compose basic types.
-- [proto](./proto/README.md): Protocol Buffers definitions for protocol messages.
-- [scp](./scp/README.md): Synchronous Composability Protocol module.
-- [sbcp](./sbcp/README.md): Superblock Construction Protocol module.
+## Crates
 
-## Generating Go Proto Files
+| Crate                | Description                                                     |
+|----------------------|-----------------------------------------------------------------|
+| `compose-spec`       | Core types: `ChainId`, `InstanceId`, `XtRequest`, etc.          |
+| `compose-spec-scp`   | 2-phase commit protocol (publisher + sequencer instances)       |
+| `compose-spec-sbcp`  | Superblock construction protocol (period/settlement management) |
+| `compose-spec-proto` | Protobuf wire format (hand-written prost structs)               |
 
-To generate the Go proto files, run:
+## Building
 
 ```bash
-cd ./compose
-protoc --proto_path=proto --go_out=proto --go_opt=paths=source_relative proto/protocol_messages.proto
+cargo build --workspace
+```
+
+## Testing
+
+```bash
+cargo test --workspace
+```
+
+## Linting
+
+```bash
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
 ```
