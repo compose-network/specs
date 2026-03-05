@@ -1,0 +1,15 @@
+[package]
+name = "compose-spec-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Protobuf wire types for the Compose protocol"
+publish = false
+
+[dependencies]
+compose-spec.workspace = true
+prost.workspace = true
+
+[lints]
+workspace = true

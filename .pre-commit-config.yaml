@@ -22,9 +22,7 @@ repos:
       - id: check-json
       - id: check-toml
       - id: end-of-file-fixer
-        exclude: '\.pb\.go$'
       - id: trailing-whitespace
-        exclude: '\.pb\.go$'
         args: [--markdown-linebreak-ext=md]
       - id: check-symlinks
       - id: detect-private-key
@@ -32,30 +30,22 @@ repos:
         args: ['--branch', 'main', '--branch', 'master']
 
   # =============================================================================
-  # Go Hooks
-  # =============================================================================
-  - repo: https://github.com/TekWizely/pre-commit-golang
-    rev: v1.0.0-rc.1
-    hooks:
-      - id: go-fmt
-        args: [-w]
-      - id: go-imports
-        args: [-w, -local, 'github.com/compose-network/specs']
-      - id: go-vet-mod
-      - id: go-build-mod
-        args: [-v]
-      - id: go-mod-tidy
-
-  # =============================================================================
-  # golangci-lint
+  # Rust Hooks
   # =============================================================================
   - repo: local
     hooks:
-      - id: golangci-lint
-        name: golangci-lint
-        entry: bash -c 'cd compose && golangci-lint run --fix --config ../.golangci.yml ./...'
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: bash -c 'cd compose && cargo fmt --all -- --check'
         language: system
-        types: [go]
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'cd compose && cargo clippy --workspace --all-targets -- -D warnings'
+        language: system
+        types: [rust]
         pass_filenames: false
 
   # =============================================================================
@@ -74,12 +64,3 @@ repos:
     rev: v8.21.2
     hooks:
       - id: gitleaks
-
-  # =============================================================================
-  # Protobuf
-  # =============================================================================
-  - repo: https://github.com/yoheimuta/protolint
-    rev: v0.50.5
-    hooks:
-      - id: protolint
-        args: ['--fix']
