@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Protobuf wire types for the Compose protocol"
+publish = false
 
 [dependencies]
 compose-spec.workspace = true

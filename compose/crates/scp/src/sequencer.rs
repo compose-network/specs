@@ -6,6 +6,7 @@ use tracing::{info, warn};
 
 use crate::mailbox::{MailboxMessage, MailboxMessageHeader};
 
+/// Errors returned by [`SequencerInstance`] operations.
 #[derive(Debug, Error)]
 pub enum SequencerError {
     #[error("no transactions to execute")]

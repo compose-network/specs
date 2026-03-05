@@ -8,6 +8,7 @@ use tracing::{error, info};
 
 use crate::block::{BlockHeader, BlockNumber, PendingBlock, SealedBlockHeader, SettledState};
 
+/// Errors returned by [`Sequencer`] operations.
 #[derive(Debug, Error)]
 pub enum SequencerError {
     #[error("block number to be sealed does not match the current block number")]

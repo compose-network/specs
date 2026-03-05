@@ -4,6 +4,7 @@ use compose_spec::{ChainId, DecisionState, Instance, InstanceId};
 use thiserror::Error;
 use tracing::info;
 
+/// Errors returned by [`PublisherInstance`] operations.
 #[derive(Debug, Error)]
 pub enum PublisherError {
     #[error("duplicated vote")]

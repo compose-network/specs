@@ -12,6 +12,7 @@ use tracing::{error, info, warn};
 
 use crate::id::generate_instance_id;
 
+/// Errors returned by [`Publisher`] operations.
 #[derive(Debug, Error)]
 pub enum PublisherError {
     #[error("can not start any instance")]
